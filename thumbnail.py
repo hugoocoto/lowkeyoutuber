@@ -6,7 +6,9 @@ and 2-4 words of big text on the left.
 
 TEXT
     --text "..." (repeat for several designs), else the lines of
-    thumbnail_texts.txt written by meta.py in the output folder.
+    thumbnail_texts.txt written by meta.py in the output folder. A line can
+    end in "| seconds" to take the frame from that moment (meta.py does this).
+    Otherwise frames are spread evenly through the video.
 
 OUTPUT (in --out, default: next to the video)
     thumbs/design_1.jpg ...   one per text, each on a different frame
@@ -25,11 +27,12 @@ beat a template.
 import argparse
 import itertools
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 
-from yt_common import CONFIG, die, log, need
+from yt_common import CONFIG, check_cam, die, log, need, num
 
 TW, TH = 1280, 720
 FONTS = [("Anton", 0.5), ("Impact", 0.58), ("TeX Gyre HerosCn:bold", 0.56),
@@ -147,18 +150,23 @@ def main():
         die(f"File not found: {args.video}")
     need("ffmpeg", "ffprobe", "fc-match")
     outdir = args.out or os.path.dirname(os.path.abspath(args.video))
-    texts = args.text
+    texts, at = args.text, args.at or []
     if not texts:
         path = os.path.join(outdir, "thumbnail_texts.txt")
         if os.path.isfile(path):
             with open(path, encoding="utf-8") as f:
-                texts = [line.strip() for line in f if line.strip()]
+                lines = [line.strip().rpartition("|") for line in f if line.strip()]
+            texts = [(text if sep else t).strip() for text, sep, t in lines]
+            if not at and all(sep for _, sep, _ in lines):
+                at = [num(t, 0) for _, _, t in lines]
     if not texts:
         die("no text: pass --text, or run meta.py first (it writes thumbnail_texts.txt)")
 
+    if args.cam and re.fullmatch(r"\d+:\d+:\d+:\d+", args.cam):   # a malformed --cam is reported by design()
+        check_cam(args.video, [int(v) for v in args.cam.split(":")], outdir)
     font, ratio = find_font()
     dur = duration(args.video)
-    times = args.at or []
+    times = list(at)
     times += [dur * (i + 1) / (len(texts) + 1) for i in range(len(times), len(texts))]
     os.makedirs(os.path.join(outdir, "thumbs"), exist_ok=True)
     made = []

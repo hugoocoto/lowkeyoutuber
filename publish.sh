@@ -9,6 +9,10 @@
 # on CUDA, NVENC) runs through prime-run on PRIME laptops. Defaults such as
 # language, jargon, facecam box and footer come from ~/.config/lowkeyoutuber/config.
 #
+# Whisper listens to the input file, not the cleaned video.mp4: on a real
+# video the noise reduction made it drop punctuation and mishear words.
+# The timeline is the same, so the transcript fits video.mp4 as is.
+#
 # ---USAGE---
 # Usage: publish.sh [options] video.mkv
 #
@@ -19,6 +23,8 @@
 #   -l LANG  language code for Whisper                    (default: config LANGUAGE)
 #   -p TEXT  names/jargon for Whisper, e.g. "PipeWire, OBS" (default: config JARGON)
 #   -W NAME  Whisper model                                (default large-v3-turbo)
+#   -R       transcribe the cleaned video.mp4 instead of the input
+#   -c BOX   facecam box x:y:w:h for thumbnails and Shorts (default: config CAM)
 #   -F FILE  text appended to the description (default: config FOOTER)
 #   -s       also make Shorts (asks which clips to render)
 #   -C OPTS  extra clips.py options, e.g. -C "--count 3 --max 45"
@@ -61,13 +67,15 @@ CLIPS_OPTS=""
 UPLOAD=0
 OUT=""
 FORCE=0
+FROM_CLEAN=0
+CAM=""
 
 usage() { sed -n '/^# ---USAGE---$/,/^# ---END USAGE---$/p' "$0" | sed '1d;$d;s/^# \{0,1\}//'; exit 1; }
 die()   { echo "Error: $*" >&2; exit 1; }
 step()  { echo; echo "=== $* ==="; }
 todo()  { [[ $FORCE -eq 1 || ! -s "$1" ]]; }   # true if the step has to run
 
-while getopts "t:m:Lnl:p:W:F:sC:uo:fh" opt; do
+while getopts "t:m:Lnl:p:W:RF:c:sC:uo:fh" opt; do
   case $opt in
     t) TRACK="$OPTARG" ;;
     m) MUSIC="$OPTARG" ;;
@@ -76,6 +84,8 @@ while getopts "t:m:Lnl:p:W:F:sC:uo:fh" opt; do
     l) LANGCODE="$OPTARG" ;;
     p) PROMPT="$OPTARG" ;;
     W) MODEL="$OPTARG" ;;
+    R) FROM_CLEAN=1 ;;
+    c) CAM="$OPTARG" ;;
     F) FOOTER="$OPTARG" ;;
     s) SHORTS=1 ;;
     C) CLIPS_OPTS="$OPTARG" ;;
@@ -122,7 +132,9 @@ fi
 
 if todo "$OUT/video.srt"; then
   step "2/5 Subtitles"
-  "${GPU[@]}" "$PY" "$HERE/subtitles.py" "${WHISPER[@]}" "$VIDEO" > "$OUT/video.srt.tmp" \
+  src=()
+  [[ $FROM_CLEAN -eq 1 ]] || src=(--audio-from "$IN" -t "$TRACK")
+  "${GPU[@]}" "$PY" "$HERE/subtitles.py" "${WHISPER[@]}" "${src[@]}" "$VIDEO" > "$OUT/video.srt.tmp" \
     || { rm -f "$OUT/video.srt.tmp"; die "subtitles failed"; }
   mv "$OUT/video.srt.tmp" "$OUT/video.srt"
 fi
@@ -136,13 +148,16 @@ fi
 
 if todo "$OUT/thumbs/design_1.jpg"; then
   step "4/5 Thumbnail designs"
-  "$PY" "$HERE/thumbnail.py" -o "$OUT" "$VIDEO"
+  thumb=(-o "$OUT")
+  [[ -z "$CAM" ]] || thumb+=(--cam "$CAM")
+  "$PY" "$HERE/thumbnail.py" "${thumb[@]}" "$VIDEO"
 fi
 
 if [[ $SHORTS -eq 1 ]]; then
   if [[ $FORCE -eq 1 ]] || ! compgen -G "$OUT/shorts/*.mp4" >/dev/null; then
     step "5/5 Shorts"
     read -r -a extra <<<"$CLIPS_OPTS"
+    [[ -z "$CAM" ]] || extra=(--cam "$CAM" "${extra[@]}")
     "${GPU[@]}" "$PY" "$HERE/clips.py" "${WHISPER[@]}" "${extra[@]}" -o "$OUT/shorts" "$VIDEO"
   fi
 fi
@@ -162,4 +177,5 @@ if [[ $UPLOAD -eq 1 ]]; then
   "$PY" "$HERE/upload.py" "$OUT"
 else
   echo "Then: $PY $HERE/upload.py \"$OUT\"   (or upload by hand in YouTube Studio)"
+  [[ $SHORTS -eq 0 ]] || echo "Shorts, after the video: $PY $HERE/upload.py --shorts \"$OUT\""
 fi

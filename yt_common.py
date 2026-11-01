@@ -8,6 +8,7 @@ CONFIG
         JARGON="PM, Neovim, Lua"           names Whisper should spell right (--prompt)
         CAM="934:384:346:303"              facecam box in the recording (clips/thumbnail --cam)
         FOOTER="~/.config/lowkeyoutuber/footer.txt"   appended to descriptions
+        FIXES="~/.config/lowkeyoutuber/fixes.txt"     transcript fixes (this is the default)
         LLM_BACKEND="auto"                 auto, claude, codex, opencode, ollama
         LLM_MODEL=""                       model for that backend (empty = its default)
 
@@ -17,7 +18,17 @@ TRANSCRIPT CACHE
     <video>.words.json. Any later run, by any of the scripts, reuses it.
     The cache is redone automatically when the video file, the audio track,
     the Whisper model or the requested language changes, or with
-    --retranscribe.
+    --retranscribe. A different --prompt only prints a warning: the cache may
+    have been fixed by hand and is kept.
+    --audio-from FILE transcribes another file with the same timeline (the
+    export before process-voice.sh cleaned it: Whisper does better on it)
+    and caches the result for both files.
+
+FIXES
+    fixes.txt has one "wrong => right" per line for words Whisper keeps getting
+    wrong ("atoy => atoi", "main .si => main.c"). They are applied every time a
+    transcript is read, so subtitles, captions and LLM input all get them, and
+    a new line also fixes old caches. Matching ignores case and punctuation.
 
 LLM
     Text tasks (clip picking, chapters, titles...) use, in this order, the first
@@ -27,6 +38,7 @@ LLM
     CLI the transcript is sent to that provider.
 """
 
+import argparse
 import json
 import os
 import re
@@ -133,6 +145,11 @@ def add_transcript_args(p):
     g.add_argument("--prompt", default=CONFIG.get("JARGON") or None,
                    help="names/jargon Whisper should spell right, e.g. 'PipeWire, OBS' (default: config JARGON)")
     g.add_argument("--retranscribe", action="store_true", help="ignore the cached transcript")
+    g.add_argument("--audio-from", metavar="FILE",
+                   help="transcribe the audio of FILE instead (same timeline, e.g. the export before "
+                        "process-voice.sh cleaned it); the transcript is cached for both files")
+    g.add_argument("--audio-from-track", type=int, default=0,
+                   help="audio track of the video itself, stored in its cache with --audio-from (default 0)")
     return g
 
 
@@ -206,22 +223,70 @@ def load_audio(video, track):
     return np.frombuffer(r.stdout, np.float32)
 
 
-def get_transcript(args, video):
-    """Return {"language", "duration", "src", "words": [{"w", "s", "e"}, ...]}."""
-    cache = os.path.splitext(video)[0] + ".words.json"
+def file_src(video, track, args):
     st = os.stat(video)
-    src = {"size": st.st_size, "mtime": int(st.st_mtime), "track": args.track, "model": args.model,
-           "prompt": args.prompt}
-    if os.path.isfile(cache) and not args.retranscribe:
-        try:
-            with open(cache, encoding="utf-8") as f:
-                data = json.load(f)
-            if data.get("src") == src and args.language in (None, data.get("language")):
-                log(f"Using cached transcript: {cache}")
-                return data
-            log("Cached transcript doesn't match (video, track, model or language changed), redoing it.")
-        except (OSError, ValueError):
-            pass
+    return {"size": st.st_size, "mtime": int(st.st_mtime), "track": track, "model": args.model,
+            "prompt": args.prompt}
+
+
+def save_transcript(data, video):
+    try:
+        with open(os.path.splitext(video)[0] + ".words.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except OSError:
+        log("(could not write transcript cache)")
+
+
+def cached_transcript(args, video, src):
+    """The cached transcript of video if it still belongs to it, else None.
+    Only the video file, track, model and language decide: a cache made with a
+    different --prompt is kept (it may have been fixed by hand), with a warning."""
+    cache = os.path.splitext(video)[0] + ".words.json"
+    if args.retranscribe or not os.path.isfile(cache):
+        return None
+    try:
+        with open(cache, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    old = data.get("src") or {}
+    same = all(old.get(k) == src[k] for k in ("size", "mtime", "track", "model"))
+    if not same or args.language not in (None, data.get("language")):
+        log("Cached transcript doesn't match (video, track, model or language changed), redoing it.")
+        return None
+    log(f"Using cached transcript: {cache}" + (f" (made from {old['from']})" if old.get("from") else ""))
+    if old.get("prompt") != src["prompt"]:
+        log(f"  It was made with --prompt {old.get('prompt')!r}, not {src['prompt']!r}. "
+            "Use --retranscribe to redo it with the new one.")
+    return data
+
+
+def get_transcript(args, video):
+    """Return {"language", "duration", "src", "words": [{"w", "s", "e"}, ...]},
+    with the fixes from fixes.txt applied."""
+    data = raw_transcript(args, video)
+    data["words"] = apply_fixes(data["words"], load_fixes())
+    return data
+
+
+def raw_transcript(args, video):
+    if args.audio_from and os.path.abspath(args.audio_from) != os.path.abspath(video):
+        src = file_src(video, args.audio_from_track, args)
+        data = cached_transcript(args, video, src)
+        if data:
+            return data
+        if not os.path.isfile(args.audio_from):
+            die(f"--audio-from file not found: {args.audio_from}")
+        log(f"Transcribing the audio of {args.audio_from} (track {args.track}) for {video}")
+        data = dict(raw_transcript(argparse.Namespace(**{**vars(args), "audio_from": None}), args.audio_from))
+        data["src"] = dict(src, **{"from": os.path.abspath(args.audio_from)})
+        save_transcript(data, video)
+        return data
+
+    src = file_src(video, args.track, args)
+    data = cached_transcript(args, video, src)
+    if data:
+        return data
 
     need("ffmpeg")
     try:
@@ -262,12 +327,97 @@ def get_transcript(args, video):
     log("")
 
     data = {"language": info.language, "duration": duration, "src": src, "words": words}
-    try:
-        with open(cache, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
-    except OSError:
-        log("(could not write transcript cache)")
+    save_transcript(data, video)
     return data
+
+
+# ---------------------------------------------------------------------------
+# Transcript fixes: words Whisper keeps getting wrong, from fixes.txt
+# ---------------------------------------------------------------------------
+LEAD_PUNCT, TRAIL_PUNCT = "¿¡\"'(«“", ".,;:!?…\"')»”"
+
+
+def bare_word(w):
+    return w.strip(LEAD_PUNCT + TRAIL_PUNCT).lower()
+
+
+def load_fixes(path=None):
+    """Read "wrong => right" lines (# comments). Matching ignores case and the
+    punctuation around words; "wrong" can be several words ("a toy => atoi")."""
+    path = path or CONFIG.get("FIXES") or os.path.join(CONFIG_DIR, "fixes.txt")
+    fixes = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for n, line in enumerate(f, 1):
+                line = line.split("#", 1)[0].strip()
+                if not line:
+                    continue
+                wrong, arrow, right = line.partition("=>")
+                if not arrow or not wrong.split():
+                    log(f"{path}:{n}: expected 'wrong => right', skipping")
+                    continue
+                tokens = [b for b in (bare_word(t) for t in wrong.split()) if b]
+                if tokens:
+                    fixes.append((tokens, right.strip()))
+    except OSError:
+        pass
+    fixes.sort(key=lambda fx: -len(fx[0]))   # longest match first
+    return fixes
+
+
+def apply_fixes(words, fixes):
+    if not fixes:
+        return words
+    bare = [bare_word(w["w"]) for w in words]
+    out, i = [], 0
+    while i < len(words):
+        for wrong, right in fixes:
+            if bare[i:i + len(wrong)] == wrong:
+                first, last = words[i], words[i + len(wrong) - 1]
+                lead = first["w"][:len(first["w"]) - len(first["w"].lstrip(LEAD_PUNCT))]
+                trail = last["w"][len(last["w"].rstrip(TRAIL_PUNCT)):]
+                if right:
+                    out.append({"w": lead + right + trail, "s": first["s"], "e": last["e"]})
+                i += len(wrong)
+                break
+        else:
+            out.append(words[i])
+            i += 1
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Facecam box check
+# ---------------------------------------------------------------------------
+def check_cam(video, cam, report_dir=None):
+    """Warn when the facecam box (x, y, w, h) has no movement in it: a wrong
+    box doesn't fail, it just gives empty facecams. Measured on real
+    recordings: a box on the face moves 0.13-0.26, a box on the screen < 0.01."""
+    import numpy as np
+    x, y, w, h = cam
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", video],
+                       capture_output=True, text=True)
+    dur = num(r.stdout.strip(), 0)
+    moving = []
+    for i in range(8):
+        r = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{dur * (i + 0.5) / 8:.2f}", "-i", video,
+                            "-frames:v", "4", "-vf", f"fps=4,crop={w}:{h}:{x}:{y},scale=96:96,format=gray",
+                            "-f", "rawvideo", "-"], capture_output=True)
+        frames = np.frombuffer(r.stdout, np.uint8)
+        if r.returncode or frames.size < 2 * 96 * 96:
+            return True   # can't tell (box outside the frame is reported by ffmpeg later)
+        frames = frames[:frames.size // (96 * 96) * 96 * 96].reshape(-1, 96, 96).astype(np.int16)
+        moving.append((np.abs(np.diff(frames, axis=0)) > 2).mean())
+    if np.median(moving) >= 0.03:
+        return True
+    log(f"\nWARNING: nothing moves inside the facecam box {x}:{y}:{w}:{h}. Did the facecam move in OBS?")
+    if report_dir:
+        img = os.path.join(report_dir, "cam_check.jpg")
+        subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-ss", f"{dur / 2:.2f}", "-i", video,
+                        "-frames:v", "1", "-vf", f"drawbox={x}:{y}:{w}:{h}:color=red:t=4", img])
+        log(f"  The box is drawn in red on: {img}")
+    log("  Pass the right box with --cam x:y:w:h (or CAM in the config).\n")
+    return False
 
 
 def word_sep(data):

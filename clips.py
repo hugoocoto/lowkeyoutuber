@@ -11,6 +11,8 @@ PIPELINE
        self-contained moments. Times are snapped to sentence boundaries so
        clips never start or end mid-sentence.
     3. You review the proposals interactively (pick, drop, adjust times).
+       They are saved in clips.json; --pick renders some of them later
+       without asking the LLM again (it never proposes the same clips twice).
     4. ffmpeg cuts each clip, rearranges it to 1080x1920 and burns in
        TikTok-style captions (the current word is highlighted).
     Optionally it also writes a short summary of the whole video.
@@ -30,6 +32,7 @@ USAGE
     clips.py video.mp4 --layout screen           # screen only, no facecam
     clips.py video.mp4 --preview                 # one test frame, to check the layout
     clips.py video.mp4 --yes                     # no questions, render everything
+    clips.py video.mp4 --pick 1,3                # render clips 1 and 3 of the last run's clips.json
 
 LAYOUTS (1080x1920)
     stack   blurred background, screen recording on top, facecam below,
@@ -55,9 +58,9 @@ import sys
 import tempfile
 import urllib.error
 
-from yt_common import (CONFIG, SENTENCE_END, add_llm_args, add_transcript_args, chunk_transcript, die, get_transcript,
-                       lang_name, llm, log, make_sentences, need, num, parse_json, setup_llm, summarize,
-                       video_encoder, word_sep)
+from yt_common import (CONFIG, SENTENCE_END, add_llm_args, add_transcript_args, check_cam, chunk_transcript, die,
+                       get_transcript, lang_name, llm, log, make_sentences, need, num, parse_json, setup_llm,
+                       summarize, video_encoder, word_sep)
 
 W, H = 1080, 1920
 PAD_START, PAD_END = 0.2, 0.3   # breathing room around each clip, in seconds
@@ -345,6 +348,11 @@ def render(args, video, clip, index, words, sep, outdir, preview=False):
     return out
 
 
+def save_clips(path, clips):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(clips, f, ensure_ascii=False, indent=2)
+
+
 def main():
     p = argparse.ArgumentParser(description="Make vertical short clips with word-by-word captions (free, local).")
     p.add_argument("video")
@@ -356,6 +364,9 @@ def main():
     g.add_argument("--no-clips", action="store_true", help="skip clips (use with --summary)")
     g.add_argument("-y", "--yes", action="store_true", help="don't ask, render all proposed clips")
     g.add_argument("--preview", action="store_true", help="render one test frame of the first clip and stop")
+    g.add_argument("--pick", metavar="N,N",
+                   help="render these clips from clips.json in the output folder (numbers as listed there), "
+                        "without asking the LLM again")
     add_transcript_args(p)   # -t/--track is also the audio track put in the clips
     add_llm_args(p)
     v = p.add_argument_group("video layout")
@@ -396,6 +407,10 @@ def main():
         else:
             args.margin_v = 330
     args.venc = video_encoder(args.encoder, 21)
+    outdir = args.out or os.path.splitext(args.video)[0] + "_clips"
+    os.makedirs(outdir, exist_ok=True)
+    if args.cam and args.layout != "screen" and re.fullmatch(r"\d+:\d+:\d+:\d+", args.cam):
+        check_cam(args.video, [int(v) for v in args.cam.split(":")], outdir)
     data = get_transcript(args, args.video)
     words = data["words"]
     if not words:
@@ -404,10 +419,21 @@ def main():
     args.lang = lang_name(data.get("language"))
     sentences = make_sentences(words, sep)
 
-    outdir = args.out or os.path.splitext(args.video)[0] + "_clips"
-    os.makedirs(outdir, exist_ok=True)
+    saved = os.path.join(outdir, "clips.json")
+    if args.pick:
+        if not os.path.isfile(saved):
+            die(f"--pick needs {saved} from an earlier run")
+        with open(saved, encoding="utf-8") as f:
+            clips = json.load(f)
+        try:
+            nums = [int(x) for x in re.split(r"[,\s]+", args.pick) if x]
+        except ValueError:
+            die("--pick takes clip numbers, e.g. --pick 1,3")
+        if not nums or not all(1 <= n <= len(clips) for n in nums):
+            die(f"--pick: clips.json has clips 1-{len(clips)}")
+        args.yes = True
 
-    if args.summary or not args.no_clips:
+    if args.summary or (not args.no_clips and not args.pick):
         setup_llm(args)
 
     if args.summary:
@@ -418,30 +444,37 @@ def main():
     if args.no_clips:
         return
 
-    clips = pick_clips(args, sentences)
-    if not clips:
-        die("The LLM proposed no usable clips. Try a bigger --llm, a wider --min/--max, or check the transcript.")
-    with open(os.path.join(outdir, "clips.json"), "w", encoding="utf-8") as f:
-        json.dump(clips, f, ensure_ascii=False, indent=2)
-
-    if not args.yes and not args.preview and sys.stdin.isatty():
-        clips = review(clips, args.duration)
+    if args.pick:
+        chosen = [clips[n - 1] for n in nums]
+    else:
+        clips = pick_clips(args, sentences)
         if not clips:
-            log("Nothing to render.")
-            return
+            die("The LLM proposed no usable clips. Try a bigger --llm, a wider --min/--max, or check the transcript.")
+        save_clips(saved, clips)
+        chosen = clips
+        if not args.yes and not args.preview and sys.stdin.isatty():
+            chosen = review(clips, args.duration)   # edits times in place, so save again
+            save_clips(saved, clips)
+            if not chosen:
+                log("Nothing to render.")
+                return
 
     if args.preview:
         try:
-            log(f"Preview frame: {render(args, args.video, clips[0], 1, words, sep, outdir, preview=True)}")
+            log(f"Preview frame: {render(args, args.video, chosen[0], 1, words, sep, outdir, preview=True)}")
         except RuntimeError:
             die("could not render the preview")
         return
 
     failed = 0
-    for n, c in enumerate(clips, 1):
-        log(f"Rendering {n}/{len(clips)}: {c['title']} ({c['end'] - c['start']:.0f}s)")
+    for n, c in enumerate(chosen, 1):
+        num_ = clips.index(c) + 1   # file names keep the number from clips.json
+        log(f"Rendering {n}/{len(chosen)}: {c['title']} ({c['end'] - c['start']:.0f}s)")
         try:
-            log(f"   -> {render(args, args.video, c, n, words, sep, outdir)}")
+            out = render(args, args.video, c, num_, words, sep, outdir)
+            c["file"] = os.path.basename(out)
+            save_clips(saved, clips)   # upload.py --shorts reads titles from here
+            log(f"   -> {out}")
         except RuntimeError:
             log("   failed, skipping this clip")
             failed += 1

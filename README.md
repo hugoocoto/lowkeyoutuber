@@ -8,12 +8,16 @@ From an OBS recording to a folder that's ready to upload, plus Shorts.
 | `subtitles.py` | Whisper transcription -> SRT/VTT. |
 | `meta.py` | Local LLM writes chapters, 5 title options, description and tags. |
 | `clips.py` | Picks the best moments and renders vertical 9:16 Shorts with word-by-word captions. |
+| `thumbnail.py` | Thumbnail designs: a frame, your facecam big, 2-4 words of text. |
 | `publish.sh` | Runs all of the above in one command, into one folder. |
-| `upload.py` | Uploads that folder to YouTube (private), with subtitles and thumbnail. |
+| `upload.py` | Uploads that folder to YouTube (private), with subtitles and thumbnail. `--shorts` uploads the Shorts. |
+| `cut.py` | Removes the parts you list in a text file (content cuts, not pauses) and keeps the transcript. |
 | `yt_common.py` | Shared code (transcript cache, Ollama client, encoder). Not run directly. |
 
 Whisper runs once per video: the transcript is cached in `<video>.words.json` and
-shared by every script. GPU: Whisper uses CUDA, video is encoded with NVENC,
+shared by every script. Words it keeps getting wrong go in `~/.config/lowkeyoutuber/fixes.txt`,
+one `wrong => right` per line (`atoy => atoi`, `main .si => main.c`): every script applies them
+when it reads a transcript. GPU: Whisper uses CUDA, video is encoded with NVENC,
 `publish.sh` runs GPU steps through `prime-run`, and Ollama uses `ollama-cuda`.
 
 ## Workflow
@@ -26,22 +30,32 @@ shared by every script. GPU: Whisper uses CUDA, video is encoded with NVENC,
    - Mic + desktop/music on separate tracks: editors mix all tracks into one on export, so clean
      the voice first: `./process-voice.sh -t 1 -m 0 -c rec.mkv` -> edit `rec_clean.mkv`, export,
      and use `-L` below.
+   - Or list the parts to remove in a text file (`17:14.4 - 17:22.7`, one per line) and run
+     `./cut.py rec.mkv cuts.txt --check` to read the words around each cut, then without
+     `--check` to render. Listen to every cut.
 3. **Process everything**:
    ```
    ./publish.sh -F links.txt edit.mp4          # mic-only export
    ./publish.sh -L -F links.txt edit.mp4       # export of rec_clean.mkv (voice already cleaned)
-   ./publish.sh -s -C "--cam 934:384:346:303" -p "PM, Neovim, Lua" edit.mp4   # + Shorts
+   ./publish.sh -s -c 934:384:346:303 -p "PM, Neovim, Lua" edit.mp4   # + Shorts
    ```
    - `-p` gives Whisper the names and jargon it would otherwise misspell (it wrote "Neobim").
-   - `-C "--cam x:y:w:h"` is your facecam box in the recording, in pixels. Shorts put it under the
-     screen, with captions below it. Check the layout with `python clips.py edit.mp4 --cam ... --preview`.
-     If your OBS layout doesn't change, the box doesn't either.
+     Prefer `JARGON` in the config: then every script uses the same prompt.
+   - `-c x:y:w:h` is your facecam box in the recording, in pixels (default: `CAM` in the config),
+     for thumbnails and Shorts. If you move the facecam in OBS, the box changes: the scripts warn
+     when nothing moves inside it and save `cam_check.jpg` with the box drawn on a frame.
+     Check the Shorts layout with `python clips.py edit.mp4 --preview`.
+   - Whisper listens to `edit.mp4`, not the cleaned audio, which it transcribed worse
+     (`-R` to use the cleaned one).
    Output in `edit_publish/`: `video.mp4`, `video.srt`, `titles.txt`, `description.txt`
    (with chapters), `tags.txt`, `thumbs/`, `shorts/`.
 4. **Review**: reorder `titles.txt` (first line is the title), fix `description.txt`
    and `video.srt`, and save your thumbnail as `thumbnail.jpg` in the folder.
    Re-running `publish.sh` skips steps that are already done. Delete a file to redo its step.
-5. **Upload**: `python upload.py edit_publish/` (private), check it in Studio and publish there.
+   To render other Shorts from the same proposals: `python clips.py edit_publish/video.mp4
+   -o edit_publish/shorts --pick 2,4` (numbers from `shorts/clips.json`, no new LLM call).
+5. **Upload**: `python upload.py edit_publish/` (private), then `python upload.py --shorts
+   edit_publish/` (they link to the video), check them in Studio and publish there.
    Or upload by hand.
 
 ## Install (Arch Linux)

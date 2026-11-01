@@ -11,7 +11,9 @@ OUTPUT (in --out, default: next to the video)
     description.txt  description + chapters + your --footer + hashtags
     tags.txt         comma-separated, within YouTube's 500-character limit
     summary.txt      plain summary of the video
-    thumbnail_texts.txt  3 short texts for thumbnail.py, one per line
+    thumbnail_texts.txt  3 short texts for thumbnail.py, one per line, each with
+                     the second of the video it's about ("TEXT | 657"), so the
+                     thumbnail shows that moment
 
 All files are plain text: edit them before uploading. The transcript is
 shared with subtitles.py and clips.py (<video>.words.json).
@@ -54,7 +56,7 @@ the summary are in another language.
 
 Return ONLY JSON in exactly this shape:
 {"titles":["...","...","...","...","..."],"description":"...","tags":["..."],"hashtags":["#...","#...","#..."],
- "thumbnail_texts":["...","...","..."]}
+ "thumbnail_texts":[{"text":"...","chapter":<n>},{"text":"...","chapter":<n>},{"text":"...","chapter":<n>}]}
 
 - titles: 5 different options, each under 60 characters. Specific and curiosity-driven,
   honest (no promises the video doesn't keep), no ALL CAPS, no emojis.
@@ -63,7 +65,8 @@ Return ONLY JSON in exactly this shape:
 - tags: 10-15 search phrases people would actually type, lowercase.
 - hashtags: 3 relevant hashtags.
 - thumbnail_texts: 3 different texts for the thumbnail image, 2-4 punchy words each (max 22
-  characters), that add curiosity to the title instead of repeating it.
+  characters), that add curiosity to the title instead of repeating it. "chapter" is the
+  number of the chapter the text is about (the thumbnail shows a frame from it).
 
 SUMMARY:
 @SUMMARY@
@@ -171,8 +174,9 @@ def main():
         log(f"Only {len(chapters)} chapter(s) found: YouTube needs at least 3, leaving them out of the description.")
 
     log("Writing titles, description and tags...")
+    numbered = "\n".join(f"{n}. {clock(c['start'], hours)} {c['title']}" for n, c in enumerate(chapters, 1))
     prompt = (META_PROMPT.replace("@LANG@", args.lang).replace("@SUMMARY@", summary)
-              .replace("@CHAPTERS@", chapter_text or "(none)"))
+              .replace("@CHAPTERS@", numbered or "(none)"))
     try:
         meta = parse_json(llm(args, prompt, json_mode=True))
     except (json.JSONDecodeError, urllib.error.URLError, OSError) as e:
@@ -195,7 +199,21 @@ def main():
     if len(description.encode("utf-8")) > 5000:
         log("Warning: description is over YouTube's 5000-byte limit, shorten it before uploading.")
 
-    thumb_texts = [clean(t)[:30] for t in meta.get("thumbnail_texts", []) if clean(t)]
+    thumbs = []   # (text, chapter number or 0)
+    for it in meta.get("thumbnail_texts", []):
+        text = clean(it.get("text", "") if isinstance(it, dict) else it).replace("|", "")[:30]
+        n = int(num(it.get("chapter"), 0)) if isinstance(it, dict) else 0
+        if text:
+            thumbs.append((text, n if 1 <= n <= len(chapters) else 0))
+    thumb_texts = []
+    for text, n in thumbs:
+        if n:   # inside its chapter; texts sharing one are spread over it
+            same = [i for i, (_, m) in enumerate(thumbs) if m == n]
+            k = same.index(thumbs.index((text, n)))
+            start = chapters[n - 1]["start"]
+            end = chapters[n]["start"] if n < len(chapters) else duration
+            text += f" | {start + (end - start) * (k + 1) / (len(same) + 1):.0f}"
+        thumb_texts.append(text)
     files = {"summary.txt": summary, "chapters.txt": chapter_text, "titles.txt": "\n".join(titles),
              "description.txt": description, "tags.txt": ", ".join(tags),
              "thumbnail_texts.txt": "\n".join(thumb_texts)}
