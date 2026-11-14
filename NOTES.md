@@ -65,3 +65,14 @@ left here is what to check by hand.
 - Quota: one long video (with captions and thumbnail) plus 3 Shorts used most of a day's quota.
 - Don't write `pkill -f upload.py; python upload.py ...` in one command: `pkill -f` matches the
   shell running that same line and kills it before the upload starts.
+
+## Always use the GPU when it is there
+
+Every encode, transcription or model run uses the NVIDIA GPU when available, CPU only as the
+fallback, including one-off edits and throwaway scripts. The 2026-11-14 sancho demo was rendered
+with libx264 on the CPU, one segment at a time, and four re-renders made it take far too long.
+
+- Video: NVENC (`h264_nvenc`). From Python, `yt_common.video_encoder("auto", q)`; in shell,
+  `-c:v h264_nvenc -preset p5 -tune hq -rc vbr -cq 18 -b:v 0`. Never default to libx264.
+- Whisper / Ollama / anything CUDA: through `prime-run` when it exists (as `publish.sh` does).
+- Before a long CPU job, check for a GPU path. If there is none, say so before starting.
