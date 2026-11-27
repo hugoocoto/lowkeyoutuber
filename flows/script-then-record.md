@@ -22,10 +22,13 @@ inputs: the topic and notes (required); length; which parts are recorded (screen
    `./lky add-media -P work/<name> rec.mkv --id rec --track <voice track>`.
 5. **Match the takes:** `./align.py -P work/<name> --media rec` writes `proposals/takes.json` and prints
    each line's take, how many retakes were dropped, and lines said differently from the script.
-   - Lines **not found**: ask the person to record them (a second file is fine: add it as another
-     media and edit the timeline by hand), or drop them from the script.
+   - Lines **not found**: ask the person to record them again, or drop them from the script.
+     A second file is fine, but `align.py` works on one recording at a time: add it as another media,
+     run `./align.py -P work/<name> --media <it>` to find the missing lines' times, then build
+     `timeline.video` by hand from both reports (one item per line, `in`/`out` from `proposals/takes.json`)
+     and skip step 6.
    - **APPROVAL:** show the report; the person accepts lines said differently, or re-records them.
-6. **Timeline:** `./align.py -P work/<name> --media rec --apply` puts the chosen takes one after
+6. **Timeline** (every line found in `rec`): `./align.py -P work/<name> --media rec --apply` puts the chosen takes one after
    another (takes are kept whole: no pause inside a take is trimmed). Add zooms where the screen
    matters (see flows/edit-recording.md step 5).
 7. **Render:** `./render.py -P work/<name> --preview --frames auto`, then `./render.py -P work/<name>`.

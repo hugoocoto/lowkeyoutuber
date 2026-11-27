@@ -522,7 +522,9 @@ def main():
             f.write(build_srt(words))
         summary["srt"] = proj.rel(args.project, srt)
 
-    stamp = backends.input_hash(pj["timeline"], pj["fps"], media_stamp(args.project, pj), args.quality)
+    # the media entries too: their settings (track, kind...) change the render, not only their files
+    stamp = backends.input_hash(pj["timeline"], pj["fps"], pj.get("media", {}), media_stamp(args.project, pj),
+                                args.quality)
     renders = pj.setdefault("renders", {})
     first = next(iter(formats))
     for fmt, (W, H) in formats.items():

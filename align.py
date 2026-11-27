@@ -27,6 +27,7 @@ import argparse
 import difflib
 import json
 import os
+import subprocess
 import sys
 
 from yt_common import bare_word, die, log
@@ -155,12 +156,22 @@ def pick_takes(lines, words, threshold=0.6):
     return chosen, report
 
 
+def media_duration(path):
+    """Length of the file in seconds (as render.py measures it), or None if unknown."""
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+                       capture_output=True, text=True)
+    try:
+        return float(r.stdout.strip())
+    except ValueError:
+        return None
+
+
 def main():
     p = argparse.ArgumentParser(description="Match script lines to a recording and pick the takes.")
     p.add_argument("-P", "--project", required=True)
     p.add_argument("--media", required=True, help="media id of the recording in project.json")
     p.add_argument("--threshold", type=float, default=0.6, help="0-1, how close a take must be (default 0.6)")
-    p.add_argument("--track", type=int, default=0, help="audio track with the voice (default 0)")
+    p.add_argument("--track", type=int, help="audio track with the voice (default: the media's track, else 0)")
     p.add_argument("--apply", action="store_true", help="write the chosen takes into the timeline")
     p.add_argument("--json", action="store_true", help="print the result as JSON on stdout")
     args = p.parse_args()
@@ -176,11 +187,12 @@ def main():
     if not m:
         die(f"no media {args.media!r} in project.json")
     media_file = proj.resolve(args.project, m["file"])
+    track = args.track if args.track is not None else int(m.get("track", 0))
     try:
         tr = backends.pick("transcribe", need=("word_timestamps",))
+        words = tr.words(media_file, lang=pj.get("lang"), track=track)
     except backends.BackendError as e:
         die(str(e))
-    words = tr.words(media_file, lang=pj.get("lang"), track=args.track)
     if not words:
         die("no speech found in the recording")
     m["words"] = proj.rel(args.project, os.path.splitext(media_file)[0] + ".words.json")
@@ -206,10 +218,14 @@ def main():
             die(f"lines not found in the recording: {', '.join(missing)}. Record them or edit script.json, "
                 "then run align.py again (nothing written to the timeline).")
         vid, cursor = [], 0.0
+        end = media_duration(media_file)
         for line, t in zip(lines, chosen):
             a, b = max(t["start"] - PAD_IN, 0), t["end"] + PAD_OUT
+            if end:
+                b = min(b, end)   # the last word can end right at the end of the recording
             vid.append({"src": args.media, "in": round(a, 3), "out": round(b, 3), "line": line["id"]})
             cursor += b - a
+        m["track"] = track   # render the same audio the takes were chosen from
         tl = pj.setdefault("timeline", {})
         tl["video"] = vid
         tl.setdefault("captions", {})["from"] = "media"

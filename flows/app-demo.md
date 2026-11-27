@@ -23,6 +23,8 @@ inputs: the app (URL, binary, or repo plus how to run it) (required); what to sh
    `"at"` (seconds in the capture). Then continue exactly like flows/voice-over.md steps 4-6, using
    `cap` as the video, and add zooms on the clicked or typed area for each action.
 6. **Title and end card (optional):** images with `dur` at the start and end of `timeline.video`.
+   A title card pushes the capture later by its `dur`: add that `dur` to the `at` of every `vo:` item
+   in `timeline.audio`, or the voice runs ahead of the picture. An end card needs no shift.
 7. **Render** both formats: `./render.py -P work/<name>`.
 
 ## Checks

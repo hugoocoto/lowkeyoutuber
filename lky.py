@@ -89,8 +89,10 @@ def cmd_flows(args):
 
 def skill_text(f):
     desc = f["summary"].replace("\n", " ")
-    return (f"---\nname: {f['name']}\ndescription: lowkeyoutuber flow: {desc} "
-            f"Use when the user asks for this kind of video work in this repo.\n---\n\n"
+    # quoted (a JSON string is a valid YAML scalar): "flow: ..." unquoted is not valid YAML
+    description = json.dumps(f"lowkeyoutuber flow: {desc} Use when the user asks for this kind of video "
+                             f"work in this repo.", ensure_ascii=False)
+    return (f"---\nname: {f['name']}\ndescription: {description}\n---\n\n"
             f"Follow `{f['file']}` in this repository exactly, step by step, including every approval "
             f"it asks for. Read `AGENTS.md` first if you haven't in this session. "
             f"Status of this flow: {f['status']}.\n")
@@ -124,8 +126,9 @@ def cmd_new(args):
         pj = proj.new(args.dir, args.flow, lang=args.lang, formats=args.format or ["16:9"], inputs=inputs)
     except proj.ProjectError as e:
         die(str(e))
-    if names[args.flow]["script"]:
-        with open(os.path.join(args.dir, "script.json"), "w", encoding="utf-8") as f:
+    script = os.path.join(args.dir, "script.json")
+    if names[args.flow]["script"] and not os.path.exists(script):   # never overwrite a written script
+        with open(script, "w", encoding="utf-8") as f:
             json.dump({"title": "", "lang": args.lang, "lines": []}, f, ensure_ascii=False, indent=2)
     out({"project": args.dir, "flow": args.flow, "formats": pj["formats"]}, args.json,
         f"Created {args.dir} for {args.flow}. Next: follow {names[args.flow]['file']}.")
@@ -140,6 +143,20 @@ def media_kind(path):
     return "video"
 
 
+def free_media_path(project, pj, mid, src):
+    """Where to copy src in media/: its own name, unless another file is already there (another
+    media's, or anything else), then name-2.ext, name-3.ext... Replacing mid's own file is fine."""
+    d = os.path.join(proj.root(project), "media")
+    stem, ext = os.path.splitext(os.path.basename(src))
+    own = pj["media"].get(mid, {}).get("file")
+    own = os.path.abspath(proj.resolve(project, own)) if own else None
+    n, dst = 1, os.path.join(d, stem + ext)
+    while os.path.exists(dst) and os.path.abspath(dst) not in (src, own):
+        n += 1
+        dst = os.path.join(d, f"{stem}-{n}{ext}")
+    return dst
+
+
 def cmd_add_media(args):
     try:
         pj = proj.load(args.project)
@@ -152,7 +169,7 @@ def cmd_add_media(args):
         die(f"media id {mid!r} already exists (use --id, or --replace)")
     src = os.path.abspath(args.file)
     if args.copy:
-        dst = os.path.join(proj.root(args.project), "media", os.path.basename(args.file))
+        dst = free_media_path(args.project, pj, mid, src)
         if os.path.abspath(dst) != src:
             shutil.copy2(src, dst)
         src = dst

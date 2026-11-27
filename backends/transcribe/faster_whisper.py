@@ -4,7 +4,7 @@ scripts (<media>.words.json, fixes.txt applied). Model: WHISPER_MODEL, else larg
 import argparse
 import importlib.util
 
-from backends import Base
+from backends import Base, BackendError
 from yt_common import CONFIG, add_transcript_args, get_transcript
 
 
@@ -26,4 +26,12 @@ class Backend(Base):
         args.model, args.track = self.model, track
         args.language = lang or args.language
         args.prompt = prompt if prompt is not None else args.prompt
-        return get_transcript(args, media)["words"]
+        # the shared transcript code ends with die() (SystemExit) or raises on a bad model load;
+        # turn both into BackendError so the next transcribe backend gets its turn, while the
+        # classic scripts keep exiting as before
+        try:
+            return get_transcript(args, media)["words"]
+        except SystemExit as e:
+            raise BackendError(str(e.code).removeprefix("Error: ")) from None
+        except (RuntimeError, ValueError, OSError, ImportError) as e:
+            raise BackendError(f"faster-whisper failed: {e}") from e

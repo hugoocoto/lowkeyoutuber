@@ -29,7 +29,9 @@ approve what matters.
    and show the person the words on both sides of every cut.
    - **APPROVAL:** the person OKs, edits or drops each cut. Never cut without it.
    - Never trim silences or speed anything up: pauses usually have screen activity (NOTES.md).
-4. **Cut:** `python cut.py rec.mkv work/<name>/proposals/cuts.txt -t <track> -o work/<name>/media/cut.mkv`.
+4. **Cut** (only if at least one cut was approved; otherwise skip this step and use `rec.mkv` wherever
+   the next steps say `cut.mkv`):
+   `python cut.py rec.mkv work/<name>/proposals/cuts.txt -t <track> -o work/<name>/media/cut.mkv`.
    Listen around every cut (transcribe a ~12 s window) and fix dangling references or stray syllables.
 5. **Zooms (optional, recommended for code):** where the person points at a small part of the
    screen (a line of code, gdb output, an error), propose zooms. `./lky add-media -P work/<name>

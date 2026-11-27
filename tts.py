@@ -80,16 +80,29 @@ def line_key(b, line, lang, draft):
     return backends.input_hash("tts", b.name, cid, spoken, lang, draft)
 
 
-def time_words(line, res, wav, lang, verify):
-    """Word timings in the script's spelling, plus a verification ratio when transcribed."""
-    raw, ratio = res.get("words"), None
+def time_words(line, raw, wav, lang, verify):
+    """Word timings in the script's spelling, the raw (spoken) timings they came from, and a
+    verification ratio when transcribed. raw: the backend's own timings, or None."""
+    ratio = None
     if not raw or verify:
         tr = backends.pick("transcribe", need=("word_timestamps",))
         heard = tr.words(wav, lang=lang)
         ratio = similarity(line.get("spoken") or line["text"], heard)
         raw = raw or heard
     words, _ = align_text(line["text"], raw)
-    return words, ratio
+    return words, raw, ratio
+
+
+def write_words(path, lang, words, raw):
+    # "raw" keeps the spoken timings, so an edit to "text" alone re-times the captions for free
+    write_json(path, {"language": lang, "words": words, "raw": raw})
+
+
+def commit(staged):
+    """Move staged files over the committed ones; the metadata (the cache key) goes last, so an
+    interrupted commit never leaves an old key next to new audio."""
+    for tmp, final in staged:
+        os.replace(tmp, final)
 
 
 def place(pj, lines, ndir, summary, args):
@@ -200,6 +213,25 @@ def main():
                 and meta.get("key") == line_key(found[0], line, lang, args.draft)):
             # only a line made by the backend that would be used now counts: a line made by a
             # fallback (quota out, first backend down) is redone once the first one works again
+            if args.verify or meta.get("text") != line["text"]:
+                # the audio is still good: only the captions (text edited) or the check (--verify)
+                # need redoing, never a new paid generation
+                try:
+                    old = read_json(base + ".words.json") or {}
+                    words, raw, ratio = time_words(line, old.get("raw"), base + ".wav", lang, args.verify)
+                except backends.BackendError as e:
+                    summary["failed"].append({"id": lid, "errors": [str(e)]})
+                    continue
+                write_words(base + ".words.json.tmp", lang, words, raw)
+                meta["text"] = line["text"]
+                if ratio is not None:
+                    meta["match"] = round(ratio, 3)
+                write_json(base + ".json.tmp", meta)
+                commit([(base + ".words.json.tmp", base + ".words.json"), (base + ".json.tmp", base + ".json")])
+                if ratio is not None and ratio < args.min_match:
+                    summary["low_match"].append({"id": lid, "match": round(ratio, 3)})
+                    log(f"  {lid}: what was heard matches the script only {ratio:.0%}. "
+                        "Listen to it, or regenerate (-f).")
             summary["cached"].append(lid)
             continue
         context = {"previous_text": (lines[i - 1].get("spoken") or lines[i - 1]["text"]) if i else None,
@@ -224,21 +256,29 @@ def main():
         if not res:
             summary["failed"].append({"id": lid, "errors": errors})
             continue
+        # stage everything next to the old files and replace them only once timing worked: a
+        # failure leaves the previous generation as it was (audio, timings and key together)
+        staged = [(base + ".new.wav", base + ".wav"), (base + ".words.json.tmp", base + ".words.json"),
+                  (base + ".json.tmp", base + ".json")]
         try:
-            to_wav(res["audio"], base + ".wav")
-            if res["audio"] != base + ".wav":
+            to_wav(res["audio"], base + ".new.wav")
+            if res["audio"] != base + ".new.wav":
                 os.remove(res["audio"])
-            words, ratio = time_words(line, res, base + ".wav", lang, args.verify)
+            words, raw, ratio = time_words(line, res.get("words"), base + ".new.wav", lang, args.verify)
         except backends.BackendError as e:
+            for tmp, _ in staged:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
             summary["failed"].append({"id": lid, "errors": [str(e)]})
             continue
-        write_json(base + ".words.json", {"language": lang, "words": words})
-        dur = probe_duration(base + ".wav")
-        write_json(base + ".json", {"key": line_key(used, line, lang, args.draft), "backend": used.name,
-                                    "model": res.get("model") or used.model, "draft": args.draft,
-                                    "chars": len(spoken), "duration": round(dur, 3),
-                                    "timestamps": "backend" if res.get("words") else "transcribed",
-                                    "match": None if ratio is None else round(ratio, 3)})
+        write_words(base + ".words.json.tmp", lang, words, raw)
+        dur = probe_duration(base + ".new.wav")
+        write_json(base + ".json.tmp", {"key": line_key(used, line, lang, args.draft), "backend": used.name,
+                                        "model": res.get("model") or used.model, "draft": args.draft,
+                                        "text": line["text"], "chars": len(spoken), "duration": round(dur, 3),
+                                        "timestamps": "backend" if res.get("words") else "transcribed",
+                                        "match": None if ratio is None else round(ratio, 3)})
+        commit(staged)
         summary["generated"].append(lid)
         summary["chars"] += len(spoken)
         summary["backends"][lid] = used.name
