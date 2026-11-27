@@ -15,14 +15,16 @@ import teleprompter as tp
 from conftest import ff
 from fakes import FakeTranscribe, even_words
 
-websockets = pytest.importorskip("websockets")
-pytest.importorskip("websocket")
+websockets = None   # only the OBS tests need these: FakeOBS skips when they're missing
 
 
 class FakeOBS:
     """obs-websocket v5 with a password; StartRecord/StopRecord make one file per take."""
 
     def __init__(self, tmp, password="secret"):
+        global websockets
+        websockets = pytest.importorskip("websockets")
+        pytest.importorskip("websocket")
         self.tmp, self.password, self.n, self.recording = tmp, password, 0, False
         self.loop = asyncio.new_event_loop()
         started = threading.Event()

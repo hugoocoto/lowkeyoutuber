@@ -107,6 +107,14 @@ def narration_len(root, lid):
     return probe_duration(wav) if os.path.isfile(wav) else 0.0
 
 
+def web_base(url):
+    """The app's address with a scheme (http:// when missing), no trailing slash; https: and file: stay."""
+    url = url.strip()
+    if not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", url) and not url.startswith("file:"):
+        url = "http://" + url
+    return url.rstrip("/")
+
+
 def chrome_path():
     from yt_common import CONFIG
     for c in (CONFIG.get("CHROME"), "google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
@@ -124,7 +132,7 @@ def capture_web(lines, root, url, W, H, tmp, headed):
     except ImportError:
         raise CaptureError("Playwright is not installed: pip install playwright")
     events, spans = [], {}
-    base = url.rstrip("/")
+    base = web_base(url)
     with sync_playwright() as p:
         exe = chrome_path()
         browser = p.chromium.launch(headless=not headed, executable_path=exe) if exe else \
@@ -155,7 +163,7 @@ def capture_web(lines, root, url, W, H, tmp, headed):
         def target(sel):
             return page.locator(sel).first
 
-        page.goto(base if base.startswith(("http", "file:")) else "http://" + base, wait_until="load")
+        page.goto(base, wait_until="load")
         page.wait_for_timeout(600)
         for line in lines:
             start = clock.now()
@@ -232,6 +240,7 @@ def capture_desktop(lines, root, app, W, H, fps, tmp, cwd, terminal):
     disp = free_display()
     env = dict(os.environ, DISPLAY=disp)
     procs = []
+    rec = None   # the recorder is stopped first on any exit, before the screen goes away
     try:
         procs.append(subprocess.Popen(["Xvfb", disp, "-screen", "0", f"{W}x{H}x24", "-nolisten", "tcp"],
                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
@@ -271,7 +280,7 @@ def capture_desktop(lines, root, app, W, H, fps, tmp, cwd, terminal):
                 ev = {"t": clock.now(), "type": kind, "line": line["id"]}
                 if kind in ("type", "run"):
                     check_text(arg)
-                    xdo("type", "--delay", "70", arg)
+                    xdo("type", "--delay", "70", "--", arg)   # "--": text like "--help" is typed, not parsed
                     if kind == "run":
                         xdo("key", "Return")
                         time.sleep(0.8)
@@ -302,6 +311,13 @@ def capture_desktop(lines, root, app, W, H, fps, tmp, cwd, terminal):
         rec.wait(timeout=30)
         return raw, events, spans
     finally:
+        if rec is not None and rec.poll() is None:
+            rec.send_signal(signal.SIGINT)
+            try:
+                rec.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                rec.kill()
+                rec.wait()
         for p in reversed(procs):
             p.terminate()
             try:
@@ -311,6 +327,26 @@ def capture_desktop(lines, root, app, W, H, fps, tmp, cwd, terminal):
 
 
 # ---------------------------------------------------------------------------
+def encode_capture(src, out, fps):
+    """Encode into a temporary sibling and replace `out` only once it probes as a video, so a
+    failed recapture (no disk space, a bad encode) leaves the previous capture alone."""
+    part = out + ".part.mp4"
+    try:
+        r = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", src, "-vf",
+                            f"fps={fps},format=yuv420p", *video_encoder("auto", 18), "-an",
+                            "-movflags", "+faststart", part], capture_output=True, text=True)
+        if r.returncode:
+            raise CaptureError("ffmpeg failed: " + r.stderr.strip()[-500:])
+        total = probe_duration(part)
+        if total <= 0:
+            raise CaptureError("ffmpeg wrote a file that can't be read: the previous capture was kept")
+        os.replace(part, out)
+        return total
+    finally:
+        if os.path.exists(part):
+            os.remove(part)
+
+
 def propose_zooms(events, total):
     """A zoom on each click/typing target, held until the next action (1.2-4 s). Actions close
     together in time become one zoom covering all their targets, so the picture doesn't bounce."""
@@ -406,14 +442,9 @@ def main():
                     die("--app is required for desktop captures")
                 src, events, spans = capture_desktop(lines, root, args.app, W, H, pj["fps"], tmp, cwd,
                                                      args.kind == "terminal")
-            r = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", src, "-vf",
-                                f"fps={pj['fps']},format=yuv420p", *video_encoder("auto", 18), "-an",
-                                "-movflags", "+faststart", out], capture_output=True, text=True)
-            if r.returncode:
-                die("ffmpeg failed: " + r.stderr.strip()[-500:])
+            total = encode_capture(src, out, pj['fps'])
     except CaptureError as e:
         die(str(e))
-    total = probe_duration(out)
     with open(os.path.join(root, "media", "capture.events.json"), "w", encoding="utf-8") as f:
         json.dump({"kind": args.kind, "size": [W, H], "lines": spans, "events": events}, f, ensure_ascii=False, indent=2)
     pj["media"]["cap"] = {"file": "media/capture.mp4", "kind": "video", "events": "media/capture.events.json"}

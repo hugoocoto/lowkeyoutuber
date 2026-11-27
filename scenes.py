@@ -558,8 +558,9 @@ def main():
                 index = os.path.join(fdir, "index.html")
                 current = open(index, encoding="utf-8").read() if os.path.isfile(index) else None
                 generated_before = (meta_old.get("generated") or {}).get(fmt)
-                edited = current is not None and generated_before and \
-                    backends.input_hash(current) != generated_before
+                # a file we have no record of generating is somebody's: keep it
+                edited = current is not None and (not generated_before or
+                                                  backends.input_hash(current) != generated_before)
                 if edited:
                     summary["edited_by_hand"].append(f"{lid} {fmt}")
                     doc = current
@@ -574,6 +575,8 @@ def main():
                     meta.setdefault("gen_key", {})[fmt] = gen_key
                 with open(index, "w", encoding="utf-8") as f:
                     f.write(doc)
+                if not edited:   # remembered even if lint or the render fails below
+                    meta.setdefault("generated", {})[fmt] = backends.input_hash(doc)
                 problems = rb.lint(fdir) if hasattr(rb, "lint") else []
                 if problems and sc.get("type") == "custom" and not edited:
                     log(f"  {lid}: fixing lint problems ({len(problems)})...")
@@ -582,13 +585,16 @@ def main():
                                     errors=problems)
                     with open(index, "w", encoding="utf-8") as f:
                         f.write(doc)
+                    meta["generated"][fmt] = backends.input_hash(doc)
                     problems = rb.lint(fdir)
                 if problems:
                     raise SceneError("lint: " + "; ".join(problems))
-                meta.setdefault("generated", {})[fmt] = (meta_old.get("generated") or {}).get(fmt) if edited \
-                    else backends.input_hash(doc)
+                if edited and generated_before:
+                    meta.setdefault("generated", {})[fmt] = generated_before
                 out = os.path.join(root, "scenes", lid + tag + ".mp4")
-                rkey = backends.input_hash(doc, W, H, pj["fps"], args.draft, rb.model)
+                imgs = [backends.file_hash(os.path.join(fdir, n)) for n in sorted(os.listdir(fdir))
+                        if n.startswith("img.")]   # an image can change under the same path
+                rkey = backends.input_hash(doc, W, H, pj["fps"], args.draft, rb.model, imgs)
                 if args.only_html:
                     continue
                 if not args.force and meta_old.get("render_key", {}).get(fmt) == rkey and os.path.isfile(out):
@@ -602,6 +608,10 @@ def main():
         except (SceneError, backends.BackendError) as e:
             log(f"{lid}: {e}")
             summary["failed"].append({"id": lid, "error": str(e)})
+            if meta.get("generated"):   # keep who wrote index.html, or the next run calls it a hand edit
+                keep = dict(meta_old, generated={**(meta_old.get("generated") or {}), **meta["generated"]})
+                with open(meta_path, "w", encoding="utf-8") as f:
+                    json.dump(keep, f, ensure_ascii=False, indent=2)
             continue
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)

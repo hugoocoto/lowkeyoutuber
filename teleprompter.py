@@ -17,6 +17,8 @@ MODES
                  address: config OBS_WEBSOCKET (default localhost:4455).
     (default)    you record one long take yourself; the page only shows the text and logs when
                  you moved to each line (marks), which align.py doesn't need but you can check.
+                 They go to proposals/marks.json; with --obs the takes go to proposals/takes-recorded.json
+                 and reopening keeps the takes already there.
 
 THEN
     align.py -P project/ --from-takes      # picks the last good take of each line
@@ -60,7 +62,9 @@ html,body{margin:0;height:100%;background:#0b0c10;color:#f2f2f2;font-family:"Dej
 <div id="err"></div>
 <div id="help">Space: start/stop take · →/Enter: next · ←: back · B: bad take · R: retake · Q: finish</div>
 <script>
-async function call(a){const r=await fetch('/api/'+a,{method:a==='state'?'GET':'POST'});const s=await r.json();show(s);}
+let queue=Promise.resolve();   // one request at a time, so answers are shown in the order they were asked
+function call(a){queue=queue.then(()=>send(a)).catch(()=>{});}
+async function send(a){const r=await fetch('/api/'+a,{method:a==='state'?'GET':'POST'});const s=await r.json();show(s);}
 function show(s){
   document.getElementById('cur').textContent=s.done?'Done. You can close this page.':s.current||'';
   document.getElementById('next').textContent=s.next||'';
@@ -78,6 +82,9 @@ document.addEventListener('keydown',e=>{
 });
 call('state');
 </script></body></html>"""
+
+
+IDLE_WAIT = 5.0   # seconds to wait for OBS to finish a recording before starting the next
 
 
 class OBSError(RuntimeError):
@@ -119,11 +126,15 @@ class OBS:
     def request(self, kind, data=None):
         rid = uuid.uuid4().hex
         with self.lock:
-            self.ws.send(json.dumps({"op": 6, "d": {"requestType": kind, "requestId": rid, "requestData": data or {}}}))
-            while True:
-                msg = json.loads(self.ws.recv())
-                if msg.get("op") == 7 and msg["d"].get("requestId") == rid:
-                    break
+            try:
+                self.ws.send(json.dumps({"op": 6, "d": {"requestType": kind, "requestId": rid, "requestData": data or {}}}))
+                while True:
+                    msg = json.loads(self.ws.recv())
+                    if msg.get("op") == 7 and msg["d"].get("requestId") == rid:
+                        break
+            except Exception as e:   # socket closed, timeout, garbage: we don't know if OBS did it
+                raise OBSError(f"lost the connection to OBS during {kind} ({e}); "
+                               "the result is unknown: check OBS before going on")
         st = msg["d"].get("requestStatus", {})
         if not st.get("result"):
             raise OBSError(f"{kind} failed: {st.get('comment') or st.get('code')}")
@@ -141,9 +152,17 @@ class Prompter:
         self.lines, self.out_path, self.obs = lines, out_path, obs
         self.i, self.recording, self.take_start, self.done, self.error = 0, False, None, False, ""
         self.t0 = time.monotonic()
-        self.data = {"mode": "obs" if obs else "marks", "takes": [], "marks": [{"line": lines[0]["id"], "t": 0.0}]}
-        self.lock = threading.Lock()
-        self.save()
+        self.data = {"mode": "obs" if obs else "marks", "takes": [], "marks": []}
+        if obs:   # reopened to record the missing lines: keep the takes already recorded
+            try:
+                with open(out_path, encoding="utf-8") as f:
+                    old = json.load(f)
+                if old.get("mode") == "obs":
+                    self.data["takes"], self.data["marks"] = old.get("takes", []), old.get("marks", [])
+            except (OSError, ValueError, AttributeError):
+                pass
+        self.data["marks"].append({"line": lines[0]["id"], "t": 0.0})
+        self.lock = threading.Lock()   # nothing is written until the first action: a failed start changes nothing
 
     def save(self):
         tmp = self.out_path + ".tmp"
@@ -166,10 +185,32 @@ class Prompter:
     def _stop(self):
         out = {}
         if self.obs:
-            out = self.obs.request("StopRecord")
+            try:
+                out = self.obs.request("StopRecord")
+            except OBSError as e:
+                try:
+                    active = self.obs.request("GetRecordStatus").get("outputActive")
+                except OBSError:
+                    active = None
+                if active is False:   # OBS did stop, but we never got the file's path
+                    self.data["takes"].append({"line": self.lines[self.i]["id"], "file": None,
+                                               "seconds": round(time.monotonic() - self.take_start, 2),
+                                               "bad": False, "lost": True})
+                    self.recording = False
+                    raise OBSError(f"{e}. OBS stopped this take but its file is unknown: "
+                                   "find it in OBS's recordings folder")
+                raise
         self.data["takes"].append({"line": self.lines[self.i]["id"], "file": out.get("outputPath"),
                                    "seconds": round(time.monotonic() - self.take_start, 2), "bad": False})
         self.recording = False
+
+    def _wait_idle(self):
+        """StopRecord answers before the output has really stopped; StartRecord would be refused."""
+        end = time.monotonic() + IDLE_WAIT
+        while self.obs.request("GetRecordStatus").get("outputActive"):
+            if time.monotonic() > end:
+                raise OBSError("OBS is still finishing the previous take: press R again in a moment")
+            time.sleep(0.1)
 
     def act(self, action):
         with self.lock:
@@ -189,6 +230,7 @@ class Prompter:
                         if self.recording:
                             self._stop()
                             self.data["takes"][-1]["bad"] = True
+                            self._wait_idle()
                         self._start()
                 elif action == "bad":
                     mine = [t for t in self.data["takes"] if t["line"] == self.lines[self.i]["id"]]
@@ -235,7 +277,12 @@ def make_server(prompter, port):
                 self._send(404, "{}", "application/json")
 
         def do_POST(self):
-            if self.path.startswith("/api/"):
+            # a form on another site can POST here without a preflight: only our own page may act
+            origin = self.headers.get("Origin")
+            port = self.server.server_address[1]
+            if origin is not None and origin not in (f"http://127.0.0.1:{port}", f"http://localhost:{port}"):
+                self._send(403, "{}", "application/json")
+            elif self.path.startswith("/api/"):
                 self._send(200, json.dumps(prompter.act(self.path[5:])), "application/json")
             else:
                 self._send(404, "{}", "application/json")
@@ -264,11 +311,14 @@ def main():
         url = addr if addr.startswith("ws") else "ws://" + addr
         try:
             obs = OBS(url, os.environ.get("OBS_WEBSOCKET_PASSWORD"))
-            obs.request("GetRecordStatus")
+            if obs.request("GetRecordStatus").get("outputActive"):
+                obs.close()
+                die("OBS is already recording: stop that recording (it isn't ours), then run this again")
         except OBSError as e:
             die(str(e))
         log(f"Connected to OBS at {url}.")
-    out = os.path.join(proj.root(args.project), "proposals", "takes-recorded.json")
+    # the OBS takes are what align.py --from-takes reads: a marks-only run must never overwrite them
+    out = os.path.join(proj.root(args.project), "proposals", "takes-recorded.json" if obs else "marks.json")
     prompter = Prompter(lines, out, obs)
     srv = make_server(prompter, args.port)
     url = f"http://127.0.0.1:{args.port}/"
@@ -286,6 +336,8 @@ def main():
     if obs:
         obs.close()
     takes = prompter.data["takes"]
+    if not obs:
+        log(f"Marks: {out}")
     log(f"Finished: {len(takes)} takes ({sum(t['bad'] for t in takes)} marked bad) -> {out}")
     try:
         pj = proj.load(args.project)

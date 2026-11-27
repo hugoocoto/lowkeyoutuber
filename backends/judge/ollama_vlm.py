@@ -73,7 +73,11 @@ class Backend(Base):
         out = {}
         for name, q in questions.items():
             v = got.get(name)
+            if v is None:
+                raise BackendError(f"Ollama gave no answer for {name!r}")
             if q["type"] == "noul":
+                if str(v).lower() not in ("true", "false", "yes", "no", "1", "0"):
+                    raise BackendError(f"Ollama gave an invalid answer for {name!r}: {v!r}")
                 yes = v is True or str(v).lower() in ("true", "yes", "1")
                 out[name] = {"answer": yes, "score": 0.8 if yes else 0.2, "confidence": 0.6}
             elif q["type"] == "choice":

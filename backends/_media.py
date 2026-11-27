@@ -5,9 +5,12 @@ import os
 import subprocess
 import tempfile
 
+from backends import BackendError
 
-def frames(video, times, width=768):
-    """JPEG bytes of the frames at these seconds."""
+
+def frames(video, times, width=768, required=False):
+    """JPEG bytes of the frames at these seconds. With required=True, a frame ffmpeg could not
+    extract raises BackendError instead of being left out."""
     out = []
     with tempfile.TemporaryDirectory() as tmp:
         for i, t in enumerate(times):
@@ -17,6 +20,8 @@ def frames(video, times, width=768):
             if os.path.isfile(f):
                 with open(f, "rb") as fh:
                     out.append(fh.read())
+            elif required:
+                raise BackendError(f"could not extract a frame at {t:.1f}s of {video}")
     return out
 
 
@@ -27,6 +32,8 @@ def clip(video, start, end, width=640, fps=4):
         subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-ss", f"{start:.3f}", "-to", f"{end:.3f}",
                         "-i", video, "-vf", f"fps={fps},scale={width}:-2", "-c:v", "libx264", "-preset", "veryfast",
                         "-crf", "30", "-c:a", "aac", "-b:a", "64k", "-ac", "1", f], capture_output=True)
+        if not os.path.isfile(f):
+            raise BackendError(f"could not cut a clip {start:.1f}-{end:.1f}s of {video}")
         with open(f, "rb") as fh:
             return fh.read()
 
@@ -64,4 +71,4 @@ def as_frames(part, max_frames=6):
     b = float(part.get("end") or duration(v))
     n = max(1, min(max_frames, int((b - a) / 1.5) + 1))
     times = [a + (b - a) * (i + 0.5) / n for i in range(n)]
-    return frames(v, times)
+    return frames(v, times, required=True)

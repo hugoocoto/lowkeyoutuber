@@ -453,6 +453,12 @@ def media_stamp(path, pj):
             if f and os.path.isfile(f):
                 st = os.stat(f)
                 out[f"{mid}.{key}"] = [st.st_size, int(st.st_mtime)]
+        variants = m.get("variants")
+        for fmt, vf in (variants.items() if isinstance(variants, dict) else ()):
+            f = proj.resolve(path, vf)
+            if f and os.path.isfile(f):
+                st = os.stat(f)
+                out[f"{mid}.variants.{fmt}"] = [st.st_size, int(st.st_mtime)]
     for it in pj["timeline"].get("video", []) + pj["timeline"].get("audio", []):
         src = it.get("src")
         if src and src not in pj.get("media", {}):

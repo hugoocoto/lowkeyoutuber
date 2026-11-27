@@ -16,6 +16,7 @@ segfault"), using an `embed` backend over ~10 s windows of picture + transcript.
 
 import argparse
 import json
+import math
 import os
 import sys
 
@@ -84,12 +85,70 @@ def clock(t):
     return f"{t // 3600}:{t % 3600 // 60:02d}:{t % 60:02d}" if t >= 3600 else f"{t // 60}:{t % 60:02d}"
 
 
+def positive_seconds(text):
+    try:
+        v = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number")
+    if not math.isfinite(v) or v <= 0:
+        raise argparse.ArgumentTypeError("the window must be a positive number of seconds")
+    return v
+
+
+def index_key(emb):
+    return backends.input_hash(emb.name, emb.cache_id() if hasattr(emb, "cache_id") else emb.model)
+
+
+def index_with(emb, idx, videos, window, tr):
+    """Index `videos` with this backend and return the new index. If the index was made with
+    another model, every recording already in it is embedded again with this one (same window
+    as before), so the index never mixes two embedding spaces and never loses what it had."""
+    key = index_key(emb)
+    rebuilt = bool(idx.get("key")) and idx["key"] != key
+    todo = [(v, window) for v in videos]
+    files = dict(idx["files"])
+    if rebuilt:
+        log(f"Embedding model changed ({idx.get('backend')} -> {emb.name}): embedding the indexed recordings again.")
+        again = []
+        for v, e in idx["files"].items():
+            if v in videos:
+                continue
+            if os.path.isfile(v):
+                again.append((v, e["stamp"][2]))
+            else:
+                log(f"dropping from the index (file is gone): {v}")
+        todo = again + todo
+        files = {}
+    new = {"backend": emb.name, "key": key, "files": files}
+    for v, win in todo:
+        st = os.stat(v)
+        stamp = [st.st_size, int(st.st_mtime), win]
+        if files.get(v, {}).get("stamp") == stamp:
+            log(f"unchanged: {v}")
+            continue
+        wins = windows(v, words_of(v, tr), win)
+        log(f"{os.path.basename(v)}: {len(wins)} windows...")
+        items = []
+        for w in wins:
+            jpg = frames(v, [(w["start"] + w["end"]) / 2], width=512)
+            items.append({"text": w["text"], **({"jpeg": jpg[0]} if jpg else {})})
+        vecs = emb.embed(items, task="document")
+        for w, vec in zip(wins, vecs):
+            w["vec"] = [round(x, 5) for x in vec]
+        files[v] = {"stamp": stamp, "windows": wins}
+        if not rebuilt:
+            save_index(new)
+    if rebuilt:   # the old index stays on disk until the whole new one exists
+        save_index(new)
+    return new
+
+
 def main():
     p = argparse.ArgumentParser(description="Search past recordings by description.")
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("index")
     s.add_argument("videos", nargs="+")
-    s.add_argument("--window", type=float, default=10.0, help="seconds per window (default 10)")
+    s.add_argument("--window", type=positive_seconds, default=10.0, help="seconds per window (default 10)")
     s.add_argument("--backend")
     s = sub.add_parser("query")
     s.add_argument("text")
@@ -105,52 +164,47 @@ def main():
         print(f"backend: {idx.get('backend')}  index: {index_path()}")
         return
 
-    try:
-        emb = backends.pick("embed", getattr(args, "backend", None) or idx.get("backend"))
-    except backends.BackendError as e:
-        die(str(e))
-    key = backends.input_hash(emb.name, emb.cache_id() if hasattr(emb, "cache_id") else emb.model)
-    if idx.get("key") and idx["key"] != key:
-        if args.cmd == "query":
-            die(f"the index was made with another embedding model ({idx.get('backend')}); re-index with it, "
-                "or index again with the new one")
-        log("Embedding model changed: rebuilding the index.")
-        idx = {"files": {}}
-    idx["backend"], idx["key"] = emb.name, key
-
     if args.cmd == "index":
+        # --backend, or else the index's own backend, first; the rest of the chain are fallbacks
+        first = args.backend or idx.get("backend")
+        order = [first] if args.backend else ([first] if first else []) + [n for n in backends.chain("embed") if n != first]
+        found, skipped = backends.candidates("embed", ",".join(order))
+        for name, why in skipped:
+            log(f"embed: skipping {name} ({why})")
+        if not found:
+            die(f"no usable embed backend in {order}. Run `lky backends` to see why.")
         try:
             tr = backends.pick("transcribe", need=("word_timestamps",))
         except backends.BackendError:
             tr = None
             log("No transcribe backend: indexing pictures only (and existing .words.json files).")
+        videos = []
         for v in args.videos:
             v = os.path.abspath(os.path.expanduser(v))
-            if not os.path.isfile(v):
+            if os.path.isfile(v):
+                videos.append(v)
+            else:
                 log(f"skipping (not found): {v}")
-                continue
-            st = os.stat(v)
-            stamp = [st.st_size, int(st.st_mtime), args.window]
-            if idx["files"].get(v, {}).get("stamp") == stamp:
-                log(f"unchanged: {v}")
-                continue
-            wins = windows(v, words_of(v, tr), args.window)
-            log(f"{os.path.basename(v)}: {len(wins)} windows...")
-            items = []
-            for w in wins:
-                jpg = frames(v, [(w["start"] + w["end"]) / 2], width=512)
-                items.append({"text": w["text"], **({"jpeg": jpg[0]} if jpg else {})})
+        errors = []
+        for emb in found:
             try:
-                vecs = emb.embed(items, task="document")
-            except backends.BackendError as e:
-                die(str(e))
-            for w, vec in zip(wins, vecs):
-                w["vec"] = [round(x, 5) for x in vec]
-            idx["files"][v] = {"stamp": stamp, "windows": wins}
-            save_index(idx)
-        log(f"Index: {index_path()}")
-        return
+                index_with(emb, idx, videos, args.window, tr)
+            except backends.BackendError as e:   # the next backend redoes the whole index with its own model
+                log(f"embed: {emb.name} failed ({e}), trying the next one.")
+                errors.append(f"{emb.name}: {e}")
+                continue
+            log(f"Index: {index_path()}")
+            return
+        die("every embed backend failed: " + "; ".join(errors))
 
+    # query: always the model that made the index (another one would be another vector space)
+    try:
+        emb = backends.pick("embed", idx.get("backend"))
+    except backends.BackendError as e:
+        die(str(e))
+    if idx.get("key") and idx["key"] != index_key(emb):
+        die(f"the index was made with another embedding model ({idx.get('backend')}); index again to "
+            "re-embed it with the one in use")
     try:
         q = emb.embed([{"text": args.text}], task="query")[0]
     except backends.BackendError as e:

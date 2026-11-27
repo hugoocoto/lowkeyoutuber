@@ -72,19 +72,34 @@ def verdict(answers, strict):
     return bad
 
 
-def run(judge, items):
+def run(judge, items, override=None):
+    """Ask every item. Each goes through the configured judge chain (a quota error on the first
+    backend tries the next); thresholds follow the backend that answered, which the result names."""
     results = []
     for it in items:
         log(f"  {it['name']}...")
+        if it.get("error"):   # media could not be prepared: an error, never a pass on text alone
+            results.append({"name": it["name"], "error": it["error"]})
+            continue
         try:
-            ans = judge.ask(it["inputs"], it["questions"])
+            ans, used = backends.call("judge", it["inputs"], it["questions"], override=override)
         except backends.BackendError as e:
             results.append({"name": it["name"], "error": str(e)})
             continue
-        fails = verdict(ans, not judge.caps.get("probabilities"))
+        fails = verdict(ans, not used.caps.get("probabilities"))
         results.append({"name": it["name"], "answers": {k: v for k, v in ans.items() if not k.startswith("_")},
-                        "fails": fails, **it.get("extra", {})})
+                        "fails": fails, "backend": used.name, **it.get("extra", {})})
     return results
+
+
+def with_frames(item, video, times):
+    """Item inputs from frames of the video; a failed extraction becomes the item's error."""
+    try:
+        item["inputs"] = [{"jpeg": j} for j in frames(video, times, required=True)]
+    except backends.BackendError as e:
+        item["error"] = str(e)
+        item["inputs"] = []
+    return item
 
 
 def main():
@@ -113,12 +128,14 @@ def main():
         with open(args.clips, encoding="utf-8") as f:
             clips = json.load(f)
         for n, c in enumerate(clips, 1):
-            inputs = ([{"video": args.video, "start": c["start"], "end": c["end"]}] if judge.caps.get("video")
-                      else [{"jpeg": j} for j in frames(args.video, [c["start"] + 1, (c["start"] + c["end"]) / 2,
-                                                                       c["end"] - 1.5])])
-            inputs.append(f"Title: {c.get('title', '')}. Summary: {c.get('summary', '')}")
-            items.append({"name": f"clip {n}", "inputs": inputs, "questions": CLIP_Q, "extra": {"clip": n}})
-        res = run(judge, items)
+            it = {"name": f"clip {n}", "inputs": [], "questions": CLIP_Q, "extra": {"clip": n}}
+            if judge.caps.get("video"):
+                it["inputs"] = [{"video": args.video, "start": c["start"], "end": c["end"]}]
+            else:
+                with_frames(it, args.video, [c["start"] + 1, (c["start"] + c["end"]) / 2, c["end"] - 1.5])
+            it["inputs"].append(f"Title: {c.get('title', '')}. Summary: {c.get('summary', '')}")
+            items.append(it)
+        res = run(judge, items, args.backend)
         for r in res:
             if "answers" in r:
                 a = r["answers"]
@@ -141,12 +158,21 @@ def main():
                 m = pj.get("media", {}).get(f"scene:{lid}")
                 if not m:
                     continue
-                f = proj.resolve(args.project, m["file"])
-                d = duration(f)
-                inputs = [{"jpeg": j} for j in frames(f, [d * 0.5, max(d - 0.3, 0)])]
-                inputs.append(f"Narration: {line['text']}")
-                items.append({"name": f"scene {lid}", "inputs": inputs, "questions": fill(SCENE_Q, text=line["text"]),
-                              "extra": {"line": lid}})
+                # the renderer picks the file by format: check every distinct one
+                files = {}
+                for fmt, vf in (m.get("variants") or {}).items():
+                    files.setdefault(vf, fmt)
+                if not files:
+                    files = {m["file"]: None}
+                for rel, fmt in files.items():
+                    f = proj.resolve(args.project, rel)
+                    d = duration(f)
+                    it = {"name": f"scene {lid}" + (f" {fmt}" if fmt and len(files) > 1 else ""), "inputs": [],
+                          "questions": fill(SCENE_Q, text=line["text"]),
+                          "extra": {"line": lid, **({"format": fmt} if fmt else {})}}
+                    with_frames(it, f, [d * 0.5, max(d - 0.3, 0)])
+                    it["inputs"].append(f"Narration: {line['text']}")
+                    items.append(it)
         if args.lines:
             video = os.path.join(root, "out", "video.mp4")
             if not os.path.isfile(video):
@@ -158,13 +184,16 @@ def main():
                 end = vo[k + 1]["at"] if k + 1 < len(vo) else duration(video)
                 if lid not in lines:
                     continue
-                inputs = ([{"video": video, "start": a["at"], "end": end}] if judge.caps.get("video")
-                          else [{"jpeg": j} for j in frames(video, [a["at"] + 0.3, (a["at"] + end) / 2])])
-                items.append({"name": f"line {lid}", "inputs": inputs,
-                              "questions": fill(LINE_Q, text=lines[lid]["text"]), "extra": {"line": lid}})
+                it = {"name": f"line {lid}", "inputs": [], "questions": fill(LINE_Q, text=lines[lid]["text"]),
+                      "extra": {"line": lid}}
+                if judge.caps.get("video"):
+                    it["inputs"] = [{"video": video, "start": a["at"], "end": end}]
+                else:
+                    with_frames(it, video, [a["at"] + 0.3, (a["at"] + end) / 2])
+                items.append(it)
         if not items:
             die("nothing to check (no rendered scenes / no narration on the timeline)")
-        res = run(judge, items)
+        res = run(judge, items, args.backend)
         out_path = os.path.join(root, "checks", "judge.json")
         proj.set_state(pj, "judge", "done" if not any(r.get("fails") or r.get("error") for r in res) else "proposed")
         proj.save(args.project, pj)

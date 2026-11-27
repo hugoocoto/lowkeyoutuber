@@ -25,11 +25,16 @@ inputs: the video (required); what it's about and who it's for; tone; language; 
    keeps the original sound under the voice). Then `./tts.py -P work/<name> --place`.
    Lines reported in `overruns` are too long for their slot: rewrite them shorter (don't speed the
    voice up), `./tts.py -P work/<name> --lines <id> -f --place`, repeat. If a line can't be shorter,
-   propose a hold: split the video item and insert a still of that frame with a `dur`.
+   propose a hold: split the video item and insert a still of that frame with a `dur`. Once the
+   person approves it, add the hold's `dur` to the `at` of every later line in `script.json` (the
+   video after the still is delayed by that much, and the later narration must follow it), then
+   `./tts.py -P work/<name> --place` again before rendering.
 6. **Preview** with frames at each line's `at`, then **render**: `./render.py -P work/<name>`.
    Captions burned only if the person wants them; `out/video.srt` is always written.
 7. **Automatic check (optional):** `./judge.py -P work/<name> --lines`: does each line describe what's
-   on screen while it's said? Rewrite the lines that fail.
+   on screen while it's said? For each line that fails, rewrite it, then regenerate and place it with
+   `./tts.py -P work/<name> --lines <id> -f --place`, render again (step 6) and run this check again:
+   the judge reads `out/video.mp4`, so it only sees the fixes after a new render.
 
 ## Checks
 `./lky check -P work/<name>`; listen to every line against its picture.

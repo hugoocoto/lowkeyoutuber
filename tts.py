@@ -134,8 +134,8 @@ def place(pj, lines, ndir, summary, args):
     if timed and len(timed) != len(lines):
         die("either every line of script.json has 'at' (voice-over) or none does")
     media = pj.get("media", {})
-    for line in lines:   # a rendered scene (scenes.py) is the line's picture unless one is given
-        if not line.get("visual") and f"scene:{line['id']}" in media:
+    for line in lines:   # a rendered scene (scenes.py) is the line's picture unless one is given (or the line is timed)
+        if not line.get("visual") and "at" not in line and f"scene:{line['id']}" in media:
             line["visual"] = f"scene:{line['id']}"
     visuals = [line for line in lines if line.get("visual")]
     if visuals and len(visuals) != len(lines):

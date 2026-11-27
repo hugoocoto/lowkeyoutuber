@@ -40,6 +40,10 @@ approve what matters.
    `{"src": "cut", "in": 0, "out": <duration>, "zooms": [{"at": 312.0, "dur": 6.0, "rect": [0.05, 0.40, 0.5, 0.3]}]}`.
    Find the rect on a frame: `./render.py -P work/<name> --preview --frames 312,315`.
    - **APPROVAL:** show the frames; the person OKs the zooms.
+   - **Footage from older videos (optional):** `./search.py query "<what>"` finds moments in
+     recordings indexed with `./search.py index <videos>`, to cut in as a timeline item. Add it
+     before rendering: the next step renders with `render.py`, and the publish folder only has
+     what was rendered.
    - Then `./render.py -P work/<name>` → `out/video.mp4` (loudness already at -14 LUFS).
 6. **Publish folder:** `./publish.sh -t <track> [-m <music track>] <cut.mkv>` without zooms, or
    `./publish.sh -L work/<name>/out/video.mp4` with them. It makes clean audio, subtitles, chapters,
@@ -47,9 +51,7 @@ approve what matters.
 7. **Review with the person:** `titles.txt` (first line is uploaded), `description.txt`, `video.srt`
    (names and jargon; add recurring fixes to `~/.config/lowkeyoutuber/fixes.txt`), `thumbnail.jpg`.
 8. **Shorts (optional):** follow flows/long-to-shorts.md on the published video.
-9. **Footage from older videos (optional):** `./search.py query "<what>"` finds moments in recordings
-   indexed with `./search.py index <videos>`, to cut in as a timeline item.
-10. **Upload (optional):** `python upload.py <publish folder>` (private), then
+9. **Upload (optional):** `python upload.py <publish folder>` (private), then
    `python upload.py --shorts <publish folder>`.
 
 ## Checks

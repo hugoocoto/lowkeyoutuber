@@ -48,7 +48,7 @@ class Backend(Base):
         return True, ""
 
     def cache_id(self):
-        return [self.model]
+        return [self.model, self.clip_pre]
 
     def _load_clip(self):
         if self._clip is None:

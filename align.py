@@ -178,7 +178,8 @@ def from_takes(args, pj, script):
     with open(tp, encoding="utf-8") as f:
         rec = json.load(f)
     track = args.track if args.track is not None else 0
-    lines, report, vid = script["lines"], [], []
+    lines, report, vid, newmedia = script["lines"], [], [], {}
+    errors, transcribed = [], False
     for line in lines:
         cands = [t for t in rec.get("takes", []) if t["line"] == line["id"] and not t.get("bad") and t.get("file")]
         chosen = None
@@ -189,8 +190,10 @@ def from_takes(args, pj, script):
             try:   # call(): on a failure the next configured transcriber gets its turn
                 words, _ = backends.call("transcribe", f, lang=pj.get("lang"), track=track,
                                          need=("word_timestamps",))
-            except backends.BackendError as e:
-                die(str(e))
+            except backends.BackendError as e:   # this file can't be read: an older take may still work
+                errors.append(f"{os.path.basename(f)}: {e}")
+                continue
+            transcribed = True
             got, rep = pick_takes([line], words, args.threshold)
             if got[0]:
                 chosen = (t, f, got[0], rep[0])
@@ -200,16 +203,21 @@ def from_takes(args, pj, script):
             continue
         t, f, take, r = chosen
         mid = f"take:{line['id']}"
-        pj["media"][mid] = {"file": f, "kind": "video", "track": track,
-                            "words": proj.rel(args.project, os.path.splitext(f)[0] + ".words.json")}
+        # the binding changes only with --apply: the timeline's in/out refer to the file it has now
+        newmedia[mid] = {"file": f, "kind": "video", "track": track,
+                         "words": proj.rel(args.project, os.path.splitext(f)[0] + ".words.json")}
         report.append(dict(r, takes=len(cands), file=f))
         b, end = take["end"] + PAD_OUT, media_duration(f)
         if end:
             b = min(b, end)   # the line can end right at the end of the take's file
         vid.append({"src": mid, "in": round(max(take["start"] - PAD_IN, 0), 3), "out": round(b, 3),
                     "line": line["id"]})
+    if errors and not transcribed:   # nothing could be transcribed at all: the backends, not the takes
+        die("couldn't transcribe any take: " + "; ".join(errors))
+    for e in errors:
+        log(f"  could not transcribe {e}")
     with open(os.path.join(root, "proposals", "takes.json"), "w", encoding="utf-8") as fh:
-        json.dump({"from": "takes-recorded.json", "lines": report}, fh, ensure_ascii=False, indent=2)
+        json.dump({"from": "takes-recorded.json", "lines": report, "errors": errors}, fh, ensure_ascii=False, indent=2)
     missing = [r["id"] for r in report if r["status"] == "missing"]
     changed = [r["id"] for r in report if r["status"] == "changed"]
     for r in report:
@@ -219,6 +227,7 @@ def from_takes(args, pj, script):
     if args.apply:
         if missing:
             die(f"no usable take for: {', '.join(missing)}. Record them again (nothing written to the timeline).")
+        pj["media"].update(newmedia)
         pj["timeline"]["video"] = vid
         pj["timeline"].setdefault("captions", {})["from"] = "media"
         proj.set_state(pj, "align", "done")

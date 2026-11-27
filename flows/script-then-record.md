@@ -11,7 +11,12 @@ inputs: the topic and notes (required); length; which parts are recorded (screen
 ## Steps
 1. **Project:** `./lky new script-then-record work/<name>`.
 2. **Script:** write `script.json`: short lines (one breath each), in the order they'll be recorded.
-   Lines the person won't record can have a `scene` (see flows/generated-short.md) and TTS.
+   Lines the person won't record can have a `scene` (see flows/generated-short.md) and TTS. Note:
+   `align.py --apply` (both modes) refuses to write the timeline unless every script line has a
+   recording, and `tts.py --place` refuses a script where only some lines have a picture. With
+   recorded and generated lines mixed, use the `align.py` report for the recorded lines' times and
+   build `timeline.video` by hand, one item per line (`scene:<id>` media for the generated ones,
+   padding as in step 4).
    - **APPROVAL:** the person reads it and changes anything that doesn't sound like them.
 3. **Teleprompter:** ask whether OBS's WebSocket server is on (OBS: Tools > WebSocket Server Settings)
    and the password is in `OBS_WEBSOCKET_PASSWORD`. Then tell the person to run (it opens a page):
@@ -22,7 +27,8 @@ inputs: the topic and notes (required); length; which parts are recorded (screen
    - OBS takes: `./align.py -P work/<name> --from-takes` (last good take of each line).
    - One long take: `./lky add-media -P work/<name> rec.mkv --id rec --track <voice track>`, then
      `./align.py -P work/<name> --media rec` (the last complete attempt of each line is kept).
-   It prints each line's take and the lines said differently from the script.
+   It prints each line's take; the lines said differently from the script are marked `changed` in
+   `proposals/takes.json`, with what was really said in `said` (the OBS output doesn't show it).
    - Lines **not found**: ask the person to record them again, or drop them from the script.
      With OBS takes, a retake is just another take: run `--from-takes` again. With one long take, a
      second file is fine, but `align.py` works on one recording at a time and each run overwrites

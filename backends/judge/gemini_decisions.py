@@ -75,7 +75,11 @@ class Backend(Base):
         return True, ""
 
     def ask(self, inputs, questions):
-        body = {"model": self.model, "input": blocks(inputs),
+        try:
+            prepared = blocks(inputs)
+        except OSError as e:
+            raise BackendError(f"could not prepare the media: {e}")
+        body = {"model": self.model, "input": prepared,
                 "questions": {name: question(q) for name, q in questions.items()}}
         req = urllib.request.Request(URL, json.dumps(body).encode("utf-8"),
                                      {"Content-Type": "application/json",
