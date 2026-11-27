@@ -23,9 +23,10 @@ inputs: the app (URL, binary, or repo plus how to run it) (required); what to sh
    - CLI: `./capture.py -P work/<name> --kind terminal --cwd <demo folder>`
    - GUI: `./capture.py -P work/<name> --kind desktop --app "<command>"`
    It records on a virtual screen/browser (the person's desktop isn't touched), sets each line's `at`,
-   puts the capture on the timeline and proposes zooms in `proposals/zooms.json` on every click and on
-   typing into web elements. Desktop/terminal typing and `run` have no target on screen, so they get no
-   proposed zoom: add those by hand to `proposals/zooms.json` if wanted.
+   puts the capture on the timeline and proposes zooms in `proposals/zooms.json` for clicks and typing
+   into web elements. Not every one gets a zoom: actions close in time are merged, and a zoom shorter
+   than 1 s is dropped. Desktop/terminal typing and `run` have no target on screen, so they get no
+   proposed zoom. Compare the action log with `proposals/zooms.json` and add missing zooms by hand.
    An action that fails to run (selector not found, xdotool error) stops it with the line and the reason.
    It does NOT see a terminal command fail: `{"run": "make test"}` counts as done even if `make test` exits
    with an error, so look at the frames to check what each command printed.
@@ -34,7 +35,7 @@ inputs: the app (URL, binary, or repo plus how to run it) (required); what to sh
    the selector and run it again.
 6. **Zooms:** the timeline has no zooms until `--apply`, so preview the proposals on a throwaway copy:
    `cp -r work/<name> work/<name>-zooms && ./capture.py -P work/<name>-zooms --apply &&
-   ./render.py -P work/<name>-zooms --preview --frames <the zooms' times>`; show the frames, then delete
+   ./render.py -P work/<name>-zooms --preview --frames <each zoom's at + dur/2>` (at `at` itself the zoom hasn't started yet); show the frames, then delete
    the copy.
    - **APPROVAL:** the person OKs, edits or drops zooms in `proposals/zooms.json` (of the real project);
      then `./capture.py -P work/<name> --apply`.

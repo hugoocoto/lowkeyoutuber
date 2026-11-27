@@ -609,7 +609,14 @@ def main():
             log(f"{lid}: {e}")
             summary["failed"].append({"id": lid, "error": str(e)})
             if meta.get("generated"):   # keep who wrote index.html, or the next run calls it a hand edit
+                # each generated hash goes with the inputs (gen_key) that made it: an old gen_key next
+                # to new HTML would let the old inputs reuse the wrong scene
                 keep = dict(meta_old, generated={**(meta_old.get("generated") or {}), **meta["generated"]})
+                keys = dict(meta_old.get("gen_key") or {})
+                for fmt in meta["generated"]:
+                    if fmt in (meta.get("gen_key") or {}):   # absent: a kept hand edit, old pair stands
+                        keys[fmt] = meta["gen_key"][fmt]
+                keep["gen_key"] = keys
                 with open(meta_path, "w", encoding="utf-8") as f:
                     json.dump(keep, f, ensure_ascii=False, indent=2)
             continue

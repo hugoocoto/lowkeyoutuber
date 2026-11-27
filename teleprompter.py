@@ -63,7 +63,14 @@ html,body{margin:0;height:100%;background:#0b0c10;color:#f2f2f2;font-family:"Dej
 <div id="help">Space: start/stop take · →/Enter: next · ←: back · B: bad take · R: retake · Q: finish</div>
 <script>
 let queue=Promise.resolve();   // one request at a time, so answers are shown in the order they were asked
-function call(a){queue=queue.then(()=>send(a)).catch(()=>{});}
+function call(a){queue=queue.then(()=>send(a)).catch(e=>lost(e));}
+function lost(e){   // the answer never came: the recording state is unknown until a refresh works
+  const r=document.getElementById('rec');r.textContent='? REC unknown';r.className='';
+  document.getElementById('err').textContent='No answer from teleprompter.py ('+e+'). Check OBS before going on; '
+    +'any key retries.';
+  queue=Promise.resolve();
+  setTimeout(()=>call('state'),1500);
+}
 async function send(a){const r=await fetch('/api/'+a,{method:a==='state'?'GET':'POST'});const s=await r.json();show(s);}
 function show(s){
   document.getElementById('cur').textContent=s.done?'Done. You can close this page.':s.current||'';

@@ -16,7 +16,8 @@ inputs: the topic and notes (required); length; which parts are recorded (screen
    recording, and `tts.py --place` refuses a script where only some lines have a picture. With
    recorded and generated lines mixed, use the `align.py` report for the recorded lines' times and
    build `timeline.video` by hand, one item per line (`scene:<id>` media for the generated ones,
-   padding as in step 4).
+   padding as in step 4). In step 4, only recorded lines need a take ("not found" for a generated line
+   is expected), and skip step 5 (`--apply`) once the timeline is built by hand.
    - **APPROVAL:** the person reads it and changes anything that doesn't sound like them.
 3. **Teleprompter:** ask whether OBS's WebSocket server is on (OBS: Tools > WebSocket Server Settings)
    and the password is in `OBS_WEBSOCKET_PASSWORD`. Then tell the person to run (it opens a page):

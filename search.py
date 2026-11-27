@@ -122,16 +122,22 @@ def index_with(emb, idx, videos, window, tr):
     new = {"backend": emb.name, "key": key, "files": files}
     for v, win in todo:
         st = os.stat(v)
-        stamp = [st.st_size, int(st.st_mtime), win]
+        cache = os.path.splitext(v)[0] + ".words.json"   # a corrected transcript re-indexes too
+        stamp = [st.st_size, int(st.st_mtime), win, backends.file_hash(cache) if os.path.isfile(cache) else None]
         if files.get(v, {}).get("stamp") == stamp:
             log(f"unchanged: {v}")
             continue
         wins = windows(v, words_of(v, tr), win)
         log(f"{os.path.basename(v)}: {len(wins)} windows...")
-        items = []
+        items, kept = [], []
         for w in wins:
             jpg = frames(v, [(w["start"] + w["end"]) / 2], width=512)
+            if not jpg and not (w["text"] or "").strip():
+                log(f"  {w['start']:.0f}s: no frame and no speech, window skipped")
+                continue
             items.append({"text": w["text"], **({"jpeg": jpg[0]} if jpg else {})})
+            kept.append(w)
+        wins = kept
         vecs = emb.embed(items, task="document")
         for w, vec in zip(wins, vecs):
             w["vec"] = [round(x, 5) for x in vec]

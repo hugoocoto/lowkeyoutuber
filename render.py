@@ -452,20 +452,20 @@ def media_stamp(path, pj):
             f = proj.resolve(path, m.get(key))
             if f and os.path.isfile(f):
                 st = os.stat(f)
-                out[f"{mid}.{key}"] = [st.st_size, int(st.st_mtime)]
+                out[f"{mid}.{key}"] = [st.st_size, st.st_mtime_ns]   # ns: a same-size replacement in the same second still counts
         variants = m.get("variants")
         for fmt, vf in (variants.items() if isinstance(variants, dict) else ()):
             f = proj.resolve(path, vf)
             if f and os.path.isfile(f):
                 st = os.stat(f)
-                out[f"{mid}.variants.{fmt}"] = [st.st_size, int(st.st_mtime)]
+                out[f"{mid}.variants.{fmt}"] = [st.st_size, st.st_mtime_ns]   # ns: a same-size replacement in the same second still counts
     for it in pj["timeline"].get("video", []) + pj["timeline"].get("audio", []):
         src = it.get("src")
         if src and src not in pj.get("media", {}):
             f = proj.resolve(path, src)
             if os.path.isfile(f):
                 st = os.stat(f)
-                out[src] = [st.st_size, int(st.st_mtime)]
+                out[src] = [st.st_size, st.st_mtime_ns]   # ns: a same-size replacement in the same second still counts
     return out
 
 

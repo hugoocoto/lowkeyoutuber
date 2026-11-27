@@ -92,6 +92,11 @@ def run(judge, items, override=None):
     return results
 
 
+def inside(start, end, fracs=(0.2, 0.5, 0.8)):
+    """Sample times as fractions of [start, end), so every frame belongs to the checked interval."""
+    return [start + f * max(end - start, 0) for f in fracs]
+
+
 def with_frames(item, video, times):
     """Item inputs from frames of the video; a failed extraction becomes the item's error."""
     try:
@@ -132,7 +137,7 @@ def main():
             if judge.caps.get("video"):
                 it["inputs"] = [{"video": args.video, "start": c["start"], "end": c["end"]}]
             else:
-                with_frames(it, args.video, [c["start"] + 1, (c["start"] + c["end"]) / 2, c["end"] - 1.5])
+                with_frames(it, args.video, inside(c["start"], c["end"]))
             it["inputs"].append(f"Title: {c.get('title', '')}. Summary: {c.get('summary', '')}")
             items.append(it)
         res = run(judge, items, args.backend)
@@ -159,9 +164,10 @@ def main():
                 if not m:
                     continue
                 # the renderer picks the file by format: check every distinct one
-                files = {}
-                for fmt, vf in (m.get("variants") or {}).items():
-                    files.setdefault(vf, fmt)
+                # (a format without a variant renders media.file, as render.py does)
+                files, variants = {}, m.get("variants") or {}
+                for fmt in pj.get("formats") or {}:
+                    files.setdefault(variants.get(fmt) or m["file"], fmt)
                 if not files:
                     files = {m["file"]: None}
                 for rel, fmt in files.items():
@@ -189,7 +195,7 @@ def main():
                 if judge.caps.get("video"):
                     it["inputs"] = [{"video": video, "start": a["at"], "end": end}]
                 else:
-                    with_frames(it, video, [a["at"] + 0.3, (a["at"] + end) / 2])
+                    with_frames(it, video, inside(a["at"], end, (0.25, 0.6)))
                 items.append(it)
         if not items:
             die("nothing to check (no rendered scenes / no narration on the timeline)")

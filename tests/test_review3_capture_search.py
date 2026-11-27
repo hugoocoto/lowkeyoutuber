@@ -217,6 +217,7 @@ def test_query_is_pinned_to_the_index_model(tmp_path, embeds, monkeypatch, capsy
 # ---------------------------------------------------------------- embed/local.py
 def test_local_embed_cache_id_includes_the_pretrained_weights(monkeypatch):
     from backends.embed import local
+    monkeypatch.delitem(local.CONFIG, "OPENCLIP_PRETRAINED", raising=False)   # the user's config doesn't leak in
     one = local.Backend().cache_id()
     monkeypatch.setitem(local.CONFIG, "OPENCLIP_PRETRAINED", "other_weights")
     two = local.Backend().cache_id()
@@ -233,3 +234,25 @@ def test_app_demo_flow_does_not_overpromise():
     assert "does NOT see a terminal command fail" in text
     assert "get no\n   proposed zoom" in text
     assert "throwaway copy" in text
+
+
+# ---------------------------------------------------------------- second review round
+def test_corrected_transcript_reindexes(tmp_path, embeds, monkeypatch, capsys):
+    a = make_video(tmp_path, "a.mp4")
+    words = tmp_path / "a.words.json"
+    words.write_text(json.dumps({"words": [{"w": "hola", "s": 1.0, "e": 1.5}]}))
+    run_search(monkeypatch, capsys, "index", str(a), "--backend", "r_a")
+    _, _, err = run_search(monkeypatch, capsys, "index", str(a), "--backend", "r_a")
+    assert "unchanged" in err
+    words.write_text(json.dumps({"words": [{"w": "adiós", "s": 1.0, "e": 1.5}]}))
+    _, _, err = run_search(monkeypatch, capsys, "index", str(a), "--backend", "r_a")
+    assert "unchanged" not in err
+    texts = " ".join(w["text"] for w in search.load_index()["files"][str(a)]["windows"])
+    assert "adiós" in texts and "hola" not in texts
+
+
+def test_window_without_frame_or_speech_is_not_embedded(tmp_path, embeds, monkeypatch, capsys):
+    a = make_video(tmp_path, "a.mp4")
+    monkeypatch.setattr(search, "frames", lambda *a, **kw: [])
+    run_search(monkeypatch, capsys, "index", str(a), "--backend", "r_a")
+    assert search.load_index()["files"][str(a)]["windows"] == []

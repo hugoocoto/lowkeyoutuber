@@ -45,8 +45,9 @@ approve what matters.
      before rendering: the next step renders with `render.py`, and the publish folder only has
      what was rendered.
    - Then `./render.py -P work/<name>` → `out/video.mp4` (loudness already at -14 LUFS).
-6. **Publish folder:** `./publish.sh -t <track> [-m <music track>] <cut.mkv>` without zooms, or
-   `./publish.sh -L work/<name>/out/video.mp4` with them. It makes clean audio, subtitles, chapters,
+6. **Publish folder:** `./publish.sh -t <track> [-m <music track>] <cut.mkv>` only if nothing was added
+   on the timeline (no zooms, no older footage); otherwise `./publish.sh -L work/<name>/out/video.mp4`,
+   the rendered timeline. It makes clean audio, subtitles, chapters,
    titles, description, tags and thumbnails in `<video>_publish/`.
 7. **Review with the person:** `titles.txt` (first line is uploaded), `description.txt`, `video.srt`
    (names and jargon; add recurring fixes to `~/.config/lowkeyoutuber/fixes.txt`), `thumbnail.jpg`.

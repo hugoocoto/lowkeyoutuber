@@ -177,6 +177,9 @@ def scene_project(tmp_path, media):
 def test_judge_checks_every_scene_variant(tmp_path, judges, monkeypatch, capsys):
     d = scene_project(tmp_path, {"file": "scenes/a.mp4", "kind": "video",
                                  "variants": {"9:16": "scenes/a.mp4", "16:9": "scenes/b.mp4"}})
+    p = proj.load(d)   # judged: the file each of the project's formats renders
+    p["formats"] = {"16:9": [1920, 1080], "9:16": [1080, 1920]}
+    proj.save(d, p)
     code, rep = run_main(judge, monkeypatch, capsys, "-P", d, "--scenes", "--backend", "f_judge")
     names = sorted(r["name"] for r in rep["results"])
     assert names == ["scene 01 16:9", "scene 01 9:16"]
@@ -251,3 +254,59 @@ def test_changed_image_bytes_render_again(tmp_path, renders, monkeypatch, capsys
     ff("-f", "lavfi", "-i", "color=green:s=64x64", "-frames:v", "1", img)   # same path, new picture
     code, s = run_main(scenes, monkeypatch, capsys, "-P", d)
     assert s["rendered"] == ["01 16:9"]
+
+
+# ---------------------------------------------------------------- second review round
+def test_failed_custom_render_keeps_generated_hash_and_gen_key_paired(tmp_path, renders, monkeypatch, capsys):
+    built = []
+
+    def fake_build(sc, line, W, H, dur, clock, fdir, work, meta, root, lang, errors=None):
+        built.append(sc["brief"])
+        return (f'<html><body><div data-composition-id="main" data-duration="{dur}"></div>'
+                f'<!-- {sc["brief"]} --></body></html>')
+    monkeypatch.setattr(scenes, "build", fake_build)
+    d = str(tmp_path / "p")
+    proj.new(d, "generated-short")
+    idx = os.path.join(d, "scenes", "01", "index.html")
+
+    def custom(brief):
+        write_script(d, [{"id": "01", "text": "Hola", "scene": {"type": "custom", "brief": brief}}])
+    custom("A")
+    assert run_main(scenes, monkeypatch, capsys, "-P", d)[0] == 0
+    custom("B")
+    assert run_main(scenes, monkeypatch, capsys, "-P", d, "--backend", "f_bad")[0] == 1
+    custom("A")   # back to A: the HTML on disk is B's, so A must be generated again
+    assert run_main(scenes, monkeypatch, capsys, "-P", d)[0] == 0
+    assert built == ["A", "B", "A"] and "<!-- A -->" in open(idx).read()
+    custom("B")
+    run_main(scenes, monkeypatch, capsys, "-P", d, "--backend", "f_bad")
+    n = len(built)
+    run_main(scenes, monkeypatch, capsys, "-P", d)   # unchanged retry of B reuses B's HTML
+    assert len(built) == n and "<!-- B -->" in open(idx).read()
+
+
+def test_judge_samples_stay_inside_the_interval():
+    for start, end in ((10, 11), (10, 10.2)):
+        assert all(start <= t < end for t in judge.inside(start, end))
+
+
+def test_judge_checks_media_file_for_formats_without_a_variant(tmp_path, judges, monkeypatch, capsys):
+    d = scene_project(tmp_path, {"file": "scenes/a.mp4", "kind": "video", "variants": {"9:16": "scenes/b.mp4"}})
+    p = proj.load(d)
+    p["formats"] = {"16:9": [1920, 1080], "9:16": [1080, 1920]}
+    proj.save(d, p)
+    code, rep = run_main(judge, monkeypatch, capsys, "-P", d, "--scenes", "--backend", "f_judge")
+    assert sorted(r["format"] for r in rep["results"]) == ["16:9", "9:16"]   # a.mp4 (16:9) and b.mp4
+
+
+def test_media_stamp_sees_a_same_size_same_second_replacement(tmp_path):
+    d = str(tmp_path / "p")
+    proj.new(d, "generated-short")
+    f = tmp_path / "p" / "a.mp4"
+    f.write_bytes(b"x" * 10)
+    os.utime(f, ns=(1_700_000_000_100_000_000, 1_700_000_000_100_000_000))
+    pj = {"media": {"m": {"file": "a.mp4", "kind": "video"}}, "timeline": {"video": [], "audio": []}}
+    before = render.media_stamp(d, pj)
+    f.write_bytes(b"y" * 10)
+    os.utime(f, ns=(1_700_000_000_900_000_000, 1_700_000_000_900_000_000))   # same second, same size
+    assert render.media_stamp(d, pj) != before
