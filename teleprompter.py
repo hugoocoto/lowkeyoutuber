@@ -97,10 +97,26 @@ class OBSError(RuntimeError):
     pass
 
 
+def is_loopback(url):
+    import ipaddress
+    from urllib.parse import urlparse
+    host = (urlparse(url).hostname or "").lower()
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 class OBS:
     """Minimal obs-websocket v5 client: Hello -> Identify (with auth) -> requests."""
 
     def __init__(self, url, password=None, timeout=10):
+        if password and url.startswith("ws://") and not is_loopback(url):
+            # the auth proof would cross the network unencrypted; on this machine it never leaves it
+            raise OBSError(f"refusing to send the OBS password unencrypted to {url}: use wss://, "
+                           "or run OBS on this machine (localhost)")
         try:
             import websocket
         except ImportError:
