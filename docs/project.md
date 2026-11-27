@@ -48,7 +48,10 @@ myproject/
 - **formats**: name → `[width, height]` (even numbers). The first one renders to `out/video.mp4`,
   the others to `out/video_<name>.mp4` (`9:16` → `video_9x16.mp4`).
 - **media**: id → file. Paths are relative to the project, or absolute. `words` is a transcript in the
-  `*.words.json` shape (`{"words": [{"w", "s", "e"}]}`); `track` is the voice's audio track.
+  `*.words.json` shape (`{"words": [{"w", "s", "e"}]}`); `track` is the voice's audio track;
+  `variants` gives one file per format (`{"16:9": "scenes/01_16x9.mp4"}`, written by scenes.py);
+  `events` is capture.py's action log. Ids by convention: `vo:<line>` narration, `scene:<line>`,
+  `take:<line>` teleprompter takes, `cap` an app capture.
 - **state**: step → `pending | proposed | approved | done | skipped | needs-human | failed`
   (or `{"state": ..., "note": ...}`). `proposed` and `needs-human` mean: ask the person.
 
@@ -103,4 +106,6 @@ play. `out/video.srt` is always written from them. `burn: true` draws them on th
 | `visual` | `tts.py --place`: what's on screen during the line (a file or media id, or an object like a timeline video item) |
 | `at` | `tts.py --place`: start time for voice-overs on an existing video |
 | `pad_before`, `pad_after` | first/last line: seconds of picture before the voice starts / after it ends (0.3 / 0.8) |
+| `scene` | `scenes.py`: the line's animated scene (`{"type": "code", ...}`, see `scenes.py -h`); becomes media `scene:<id>` and the line's picture |
+| `actions` | `capture.py`: what to do in the app during the line (see `capture.py -h`) |
 | anything else | free for the flow (`action`, `notes`, ...) |

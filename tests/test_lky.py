@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 
+import backends
 import lky
 from conftest import ROOT
 
@@ -61,5 +62,5 @@ def test_check_passes_on_a_good_render_and_fails_on_a_bad_one(tmp_path, media):
 
 def test_backends_listing():
     data = json.loads(run("backends", "--json").stdout)
-    assert set(data["chains"]) == {"llm", "transcribe", "tts", "music"}
+    assert set(data["chains"]) == set(backends.KINDS)
     assert any(b["name"] == "elevenlabs" for b in data["backends"])

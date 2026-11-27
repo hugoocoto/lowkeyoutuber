@@ -11,7 +11,9 @@ KINDS (method every backend of that kind has)
     transcribe  words(media, lang=None, prompt=None, track=0) -> [{"w", "s", "e"}]
     tts         speak(text, out_base, lang, context=None, draft=False) -> {"audio", "words" | None}
     music       get(prompt, duration) -> path
-    Planned (issue #1): judge, embed, render.
+    render      render_scene(scene_dir, out, fps, w, h, draft=False) -> path; lint(scene_dir) -> [problems]
+    judge       ask(inputs, questions) -> {name: {"answer", "score", "confidence"}}
+    embed       embed(items, task="document") -> [[float]]  (items: {"text"} / {"image"} / {"video"})
 
 CAPABILITIES
     Each backend has a caps dict ({"local": True, "timestamps": False, ...}), so
@@ -24,7 +26,7 @@ CONFIG (~/.config/lowkeyoutuber/config)
     TTS="elevenlabs,chatterbox,none" a chain for one kind; the first backend
                                      that works is used, the next ones are
                                      fallbacks (missing key, quota, failure)
-    Keys per kind: LLM, TRANSCRIBE, TTS, MUSIC. API keys come from the
+    Keys per kind: LLM, TRANSCRIBE, TTS, MUSIC, RENDER, JUDGE, EMBED. API keys come from the
     environment only, never from the config file.
 
     `lky backends` lists every backend, whether it can be used here, and what it can do.
@@ -43,11 +45,12 @@ KINDS = {
     "transcribe": "words",
     "tts": "speak",
     "music": "get",
+    "render": "render_scene",
+    "judge": "ask",
+    "embed": "embed",
 }
 PLANNED = {
-    "judge": "ask(media, questions) -> [{answer, score, confidence}]  (ollama_vlm, gemini_decisions)",
-    "embed": "embed(items) -> vectors  (local OpenCLIP + text, gemini_embedding)",
-    "render": "render_scene(file, out, fps, w, h)  (hyperframes, fframes, remotion)",
+    "render": "fframes (GPU, Rust + SVG) once it's out of beta; remotion",
 }
 
 # The default chain per kind. "local" needs no API keys: the LLM chain is the
@@ -58,12 +61,18 @@ PROFILES = {
         "transcribe": "faster_whisper",
         "tts": "chatterbox,kokoro,none",
         "music": "library",
+        "render": "hyperframes",
+        "judge": "ollama_vlm",
+        "embed": "local",
     },
     "cloud": {
         "llm": "claude_cli,codex_cli,opencode_cli,ollama",
         "transcribe": "faster_whisper",
         "tts": "elevenlabs,chatterbox,kokoro,none",
         "music": "library",
+        "render": "hyperframes",
+        "judge": "gemini_decisions,ollama_vlm",
+        "embed": "gemini_embedding,local",
     },
 }
 
