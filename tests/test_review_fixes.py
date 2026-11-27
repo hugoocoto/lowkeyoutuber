@@ -180,3 +180,44 @@ def test_copied_media_with_the_same_name_dont_overwrite_each_other(tmp_path, med
     for cam in ("a", "b"):
         copied = proj.resolve(d, m[f"cam-{cam}"]["file"])
         assert open(copied, "rb").read() == open(tmp_path / cam / "rec.wav", "rb").read()
+
+
+def test_transcribe_falls_back_to_the_next_backend(tmp_path, media, fakes, monkeypatch):
+    class Broken(FakeTranscribe):
+        def words(self, *a, **kw):
+            raise backends.BackendError("CUDA out of memory")
+    backends.register("transcribe", "f_broken", Broken)
+    try:
+        monkeypatch.setitem(backends.CONFIG, "TRANSCRIBE", "f_broken,f_whisper")
+        d = str(tmp_path / "p")
+        proj.new(d, "script-then-record")
+        pj = proj.load(d)
+        pj["media"]["rec"] = {"file": str(media / "rec.mp4"), "kind": "video"}
+        proj.save(d, pj)
+        script(d, [{"id": "a", "text": "uno"}])
+        FakeTranscribe.heard = [{"w": "uno", "s": 1.0, "e": 1.4}]
+        monkeypatch.setattr(sys, "argv", ["align.py", "-P", d, "--media", "rec", "--apply"])
+        align.main()
+        assert proj.load(d)["timeline"]["video"][0]["src"] == "rec"
+    finally:
+        backends.unregister("transcribe", "f_broken")
+
+
+def test_interrupted_commit_leaves_no_cache_key(tmp_path, monkeypatch):
+    import tts
+    base = str(tmp_path / "a")
+    for ext in (".wav", ".words.json", ".json"):
+        open(base + ext, "w").write("old")
+        open(base + {".wav": ".new.wav"}.get(ext, ext + ".tmp"), "w").write("new")
+    real, calls = os.replace, []
+
+    def interrupted(src, dst):
+        calls.append(dst)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        real(src, dst)
+    monkeypatch.setattr(tts.os, "replace", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        tts.commit([(base + ".new.wav", base + ".wav"), (base + ".words.json.tmp", base + ".words.json"),
+                    (base + ".json.tmp", base + ".json")], base + ".json")
+    assert open(base + ".wav").read() == "new" and not os.path.exists(base + ".json")

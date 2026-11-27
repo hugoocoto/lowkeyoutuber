@@ -188,9 +188,9 @@ def main():
         die(f"no media {args.media!r} in project.json")
     media_file = proj.resolve(args.project, m["file"])
     track = args.track if args.track is not None else int(m.get("track", 0))
-    try:
-        tr = backends.pick("transcribe", need=("word_timestamps",))
-        words = tr.words(media_file, lang=pj.get("lang"), track=track)
+    try:   # call(): on a failure the next configured transcriber gets its turn
+        words, _ = backends.call("transcribe", media_file, lang=pj.get("lang"), track=track,
+                                 need=("word_timestamps",))
     except backends.BackendError as e:
         die(str(e))
     if not words:

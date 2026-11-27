@@ -85,8 +85,7 @@ def time_words(line, raw, wav, lang, verify):
     verification ratio when transcribed. raw: the backend's own timings, or None."""
     ratio = None
     if not raw or verify:
-        tr = backends.pick("transcribe", need=("word_timestamps",))
-        heard = tr.words(wav, lang=lang)
+        heard, _ = backends.call("transcribe", wav, lang=lang, need=("word_timestamps",))
         ratio = similarity(line.get("spoken") or line["text"], heard)
         raw = raw or heard
     words, _ = align_text(line["text"], raw)
@@ -98,9 +97,12 @@ def write_words(path, lang, words, raw):
     write_json(path, {"language": lang, "words": words, "raw": raw})
 
 
-def commit(staged):
-    """Move staged files over the committed ones; the metadata (the cache key) goes last, so an
-    interrupted commit never leaves an old key next to new audio."""
+def commit(staged, meta):
+    """Move staged files over the committed ones. The old metadata (the cache key) is removed
+    first and the new one goes in last, so an interrupted commit leaves no key at all and the
+    line is generated again, instead of an old key next to new audio."""
+    if os.path.exists(meta):
+        os.remove(meta)
     for tmp, final in staged:
         os.replace(tmp, final)
 
@@ -227,7 +229,11 @@ def main():
                 if ratio is not None:
                     meta["match"] = round(ratio, 3)
                 write_json(base + ".json.tmp", meta)
-                commit([(base + ".words.json.tmp", base + ".words.json"), (base + ".json.tmp", base + ".json")])
+                # the audio stays: words first, metadata last; an interruption leaves the old
+                # metadata (old "text"), so the next run simply re-times again
+                for tmp, final in ((base + ".words.json.tmp", base + ".words.json"),
+                                   (base + ".json.tmp", base + ".json")):
+                    os.replace(tmp, final)
                 if ratio is not None and ratio < args.min_match:
                     summary["low_match"].append({"id": lid, "match": round(ratio, 3)})
                     log(f"  {lid}: what was heard matches the script only {ratio:.0%}. "
@@ -259,7 +265,7 @@ def main():
         # stage everything next to the old files and replace them only once timing worked: a
         # failure leaves the previous generation as it was (audio, timings and key together)
         staged = [(base + ".new.wav", base + ".wav"), (base + ".words.json.tmp", base + ".words.json"),
-                  (base + ".json.tmp", base + ".json")]
+                  (base + ".json.tmp", base + ".json")]   # metadata last
         try:
             to_wav(res["audio"], base + ".new.wav")
             if res["audio"] != base + ".new.wav":
@@ -278,7 +284,7 @@ def main():
                                         "text": line["text"], "chars": len(spoken), "duration": round(dur, 3),
                                         "timestamps": "backend" if res.get("words") else "transcribed",
                                         "match": None if ratio is None else round(ratio, 3)})
-        commit(staged)
+        commit(staged, base + ".json")
         summary["generated"].append(lid)
         summary["chars"] += len(spoken)
         summary["backends"][lid] = used.name
