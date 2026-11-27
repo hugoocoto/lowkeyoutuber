@@ -120,6 +120,11 @@ For flows (see `AGENTS.md`), working in a project folder (`docs/project.md`):
 | `tts.py` | Narrates a script with the configured voice (yours, cloned, or a preset), with word timings. |
 | `align.py` | Matches a recording to the script and keeps the last good take of each line. |
 | `render.py` | Renders the project's timeline: clips, images, zooms, captions, music under the voice, -14 LUFS. |
+| `scenes.py` | Animated scenes written as code (code typing, diagrams, terminal, titles), rendered with HyperFrames. |
+| `capture.py` | Records an app by driving it: a web page, a terminal or a desktop program, with zooms on each action. |
+| `teleprompter.py` | Shows the script while you record; with OBS, one recording per take. |
+| `judge.py` | Checks scenes, narration and Shorts with a multimodal model before you look. |
+| `search.py` | Finds moments in your old recordings by describing them. |
 
 ## Models: all swappable
 
@@ -139,11 +144,24 @@ MUSIC_DIR="~/Music/lowkeyoutuber"          # tracks you're allowed to use
 |---|---|
 | LLM | Claude Code, Codex, OpenCode (your own sign-in), Ollama (local) |
 | Transcription | faster-whisper (local) |
-| Voice | Chatterbox Multilingual (local, clones your voice), Kokoro (local, preset voices, CPU), ElevenLabs (cloud, `ELEVENLABS_API_KEY`), none |
+| Voice | Chatterbox Multilingual (local, clones your voice), Qwen3-TTS (local, clones from 3 s, CUDA), Kokoro (local, preset voices, CPU), ElevenLabs (cloud, `ELEVENLABS_API_KEY`), none |
 | Music | a local folder |
+| Scenes | HyperFrames (local, Node.js 22+ and Chrome; installed and pinned on first use) |
+| Judge | Ollama vision model (local), Gemini Decisions (cloud, `GEMINI_API_KEY`) |
+| Search | OpenCLIP + Ollama text embeddings (local), Gemini Embedding 2 (cloud) |
 
-Install the local voices in the same venv: `pip install chatterbox-tts` and/or `pip install kokoro soundfile`
-(`sudo pacman -S espeak-ng` for Kokoro in Spanish). API keys go in the environment, never in the config.
+Install what you use, in the same venv:
+
+```
+pip install chatterbox-tts            # or qwen-tts, or: kokoro soundfile (+ sudo pacman -S espeak-ng)
+sudo pacman -S nodejs npm             # scenes (HyperFrames installs itself on first use)
+pip install playwright                # app capture in a browser (uses your Chrome/Chromium)
+sudo pacman -S xorg-server-xvfb xdotool xterm   # terminal and desktop capture
+pip install websocket-client          # teleprompter controlling OBS
+pip install open_clip_torch           # local search (with: ollama pull nomic-embed-text)
+```
+
+API keys go in the environment, never in the config.
 
 ## Tests
 

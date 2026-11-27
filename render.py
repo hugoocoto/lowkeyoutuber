@@ -78,12 +78,14 @@ def probe(path):
 # ---------------------------------------------------------------------------
 # Timeline -> concrete items
 # ---------------------------------------------------------------------------
-def source(path, pj, it):
-    """(file, media entry or {}) for a timeline item's src."""
+def source(path, pj, it, fmt=None):
+    """(file, media entry or {}) for a timeline item's src. A media entry can have one file per
+    format ("variants": {"9:16": "scenes/x_9x16.mp4"}), e.g. scenes rendered at each size."""
     src = it.get("src")
     m = pj.get("media", {}).get(src)
     if m:
-        return proj.resolve(path, m["file"]), m
+        f = (m.get("variants") or {}).get(fmt) or m["file"]
+        return proj.resolve(path, f), m
     return proj.resolve(path, src), {}
 
 
@@ -97,7 +99,7 @@ def load_words(path, m):
         return []
 
 
-def plan(path, pj):
+def plan(path, pj, fmt=None):
     """Video items with absolute start times, audio items, total length, timeline words."""
     vids, t, words = [], 0.0, []
     for n, it in enumerate(pj["timeline"].get("video", []), 1):
@@ -105,7 +107,7 @@ def plan(path, pj):
         if "color" in it and "src" not in it:
             entry.update(kind="color", file=None, d=float(it["dur"]))
         else:
-            f, m = source(path, pj, it)
+            f, m = source(path, pj, it, fmt)
             if not os.path.isfile(f):
                 raise RenderError(f"timeline.video[{n}]: file not found: {f}")
             info = probe(f)
@@ -541,7 +543,8 @@ def main():
         else:
             log(f"{fmt}: rendering {total:.1f}s at {W}x{H}{' (preview)' if args.preview else ''}...")
             try:
-                measured = render_format(args.project, pj, fmt, W, H, vids, auds, total, words, args, out)
+                fv, fa, _, _ = plan(args.project, pj, fmt)   # per-format files (scene variants)
+                measured = render_format(args.project, pj, fmt, W, H, fv, fa, total, words, args, out)
             except RenderError as e:
                 proj.set_state(pj, "render", "failed")
                 proj.save(args.project, pj)

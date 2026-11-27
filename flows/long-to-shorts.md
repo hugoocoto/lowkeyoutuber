@@ -14,7 +14,9 @@ inputs: the long video (required); how many Shorts and how long (default 5 of 30
 2. **Propose:** `python clips.py video.mp4 --propose -o <out>/shorts [--count 5 --min 30 --max 60]`.
    It writes `clips.json` (start, end, title, summary, score) without rendering.
 3. **Review the proposals yourself first:** read the transcript around each one. Drop clips that need
-   earlier context, that cross a hard cut, or that end mid-action.
+   earlier context, that cross a hard cut, or that end mid-action. With a judge backend,
+   `./judge.py --clips <out>/shorts/clips.json --video video.mp4` adds a `judge` score to each clip
+   (hook, works without context, ends cleanly) and lists the ones that fail.
    - **APPROVAL:** show the person the remaining proposals (times, title, one-line summary); they pick.
      Times can be edited in `clips.json` before rendering.
 4. **Render the approved ones:** `python clips.py video.mp4 -o <out>/shorts --pick 1,3`.
@@ -23,6 +25,6 @@ inputs: the long video (required); how many Shorts and how long (default 5 of 30
 6. **Upload (optional), after the long video:** `python upload.py --shorts <publish folder>` (titles come
    from `clips.json`, each Short links to the full video).
 
-## Not built yet
-- Re-ranking candidates by looking at the clip itself (judge backend, issue #1 M8).
-- Zooms inside Shorts so code is readable in 9:16: until then, prefer the `screen` layout for code-heavy clips.
+## Limits
+- clips.py doesn't zoom inside Shorts: for code-heavy clips prefer the `screen` layout, or rebuild the clip
+  as a project timeline with zooms and render it with render.py at 9:16.

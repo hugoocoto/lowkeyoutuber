@@ -107,6 +107,18 @@ def commit(staged, meta):
         os.replace(tmp, final)
 
 
+def line_spans(lines, durs, with_visuals=True):
+    """How long each line's picture lasts when lines play one after another: its narration plus
+    the gap after it; the first line also gets "pad_before" (the voice starts that much into its
+    picture) and the last "pad_after". Returns (lead, spans)."""
+    lead = float(lines[0].get("pad_before", 0.3)) if with_visuals and lines else 0.0
+    spans = []
+    for i, (line, d) in enumerate(zip(lines, durs)):
+        last = i + 1 == len(lines)
+        spans.append(d + (float(line.get("pad_after", 0.8)) if last else GAP) + (lead if i == 0 else 0))
+    return lead, spans
+
+
 def place(pj, lines, ndir, summary, args):
     """Put the narration on the timeline.
     - Lines with "at" (seconds) start there: voice-over on an existing video. A line longer
@@ -121,6 +133,10 @@ def place(pj, lines, ndir, summary, args):
     timed = [line for line in lines if "at" in line]
     if timed and len(timed) != len(lines):
         die("either every line of script.json has 'at' (voice-over) or none does")
+    media = pj.get("media", {})
+    for line in lines:   # a rendered scene (scenes.py) is the line's picture unless one is given
+        if not line.get("visual") and f"scene:{line['id']}" in media:
+            line["visual"] = f"scene:{line['id']}"
     visuals = [line for line in lines if line.get("visual")]
     if visuals and len(visuals) != len(lines):
         die("either every line of script.json has 'visual' or none does (lines without: "
@@ -128,7 +144,7 @@ def place(pj, lines, ndir, summary, args):
     if timed and visuals:
         die("script.json lines have both 'at' (voice-over on one video) and 'visual' (a picture per line): "
             "use one or the other")
-    lead = float(lines[0].get("pad_before", 0.3)) if visuals else 0.0
+    lead, spans = line_spans(lines, durs, bool(visuals))
     placed, video, overruns, at = [], [], [], lead
     for i, (line, d) in enumerate(zip(lines, durs)):
         if timed:
@@ -138,8 +154,7 @@ def place(pj, lines, ndir, summary, args):
                 overruns.append({"id": line["id"], "too_long_by": round(at + d - nxt + 0.1, 2)})
         placed.append({"src": f"vo:{line['id']}", "at": round(at, 3), "line": line["id"]})
         if visuals:
-            last = i + 1 == len(lines)
-            span = d + (float(line.get("pad_after", 0.8)) if last else GAP) + (lead if i == 0 else 0)
+            span = spans[i]
             v = line["visual"]
             item = {"src": v, "line": line["id"]}
             if isinstance(v, dict):   # {"src": ..., "in": ...} for a clip, zooms, fit...

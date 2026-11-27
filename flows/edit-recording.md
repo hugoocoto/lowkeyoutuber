@@ -47,7 +47,9 @@ approve what matters.
 7. **Review with the person:** `titles.txt` (first line is uploaded), `description.txt`, `video.srt`
    (names and jargon; add recurring fixes to `~/.config/lowkeyoutuber/fixes.txt`), `thumbnail.jpg`.
 8. **Shorts (optional):** follow flows/long-to-shorts.md on the published video.
-9. **Upload (optional):** `python upload.py <publish folder>` (private), then
+9. **Footage from older videos (optional):** `./search.py query "<what>"` finds moments in recordings
+   indexed with `./search.py index <videos>`, to cut in as a timeline item.
+10. **Upload (optional):** `python upload.py <publish folder>` (private), then
    `python upload.py --shorts <publish folder>`.
 
 ## Checks

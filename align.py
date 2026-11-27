@@ -166,10 +166,75 @@ def media_duration(path):
         return None
 
 
+def from_takes(args, pj, script):
+    """One file per take (teleprompter.py --obs): for each line, the last take not marked bad
+    that really contains the line; inside it, the part where the line is said (padded)."""
+    import backends
+    import project as proj
+    root = proj.root(args.project)
+    tp = os.path.join(root, "proposals", "takes-recorded.json")
+    if not os.path.isfile(tp):
+        die("no proposals/takes-recorded.json: record with teleprompter.py --obs first")
+    with open(tp, encoding="utf-8") as f:
+        rec = json.load(f)
+    track = args.track if args.track is not None else 0
+    lines, report, vid = script["lines"], [], []
+    for line in lines:
+        cands = [t for t in rec.get("takes", []) if t["line"] == line["id"] and not t.get("bad") and t.get("file")]
+        chosen = None
+        for t in reversed(cands):   # the last good take that really has the line
+            f = os.path.expanduser(t["file"])
+            if not os.path.isfile(f):
+                continue
+            try:   # call(): on a failure the next configured transcriber gets its turn
+                words, _ = backends.call("transcribe", f, lang=pj.get("lang"), track=track,
+                                         need=("word_timestamps",))
+            except backends.BackendError as e:
+                die(str(e))
+            got, rep = pick_takes([line], words, args.threshold)
+            if got[0]:
+                chosen = (t, f, got[0], rep[0])
+                break
+        if not chosen:
+            report.append({"id": line["id"], "status": "missing", "takes": len(cands)})
+            continue
+        t, f, take, r = chosen
+        mid = f"take:{line['id']}"
+        pj["media"][mid] = {"file": f, "kind": "video", "track": track,
+                            "words": proj.rel(args.project, os.path.splitext(f)[0] + ".words.json")}
+        report.append(dict(r, takes=len(cands), file=f))
+        b, end = take["end"] + PAD_OUT, media_duration(f)
+        if end:
+            b = min(b, end)   # the line can end right at the end of the take's file
+        vid.append({"src": mid, "in": round(max(take["start"] - PAD_IN, 0), 3), "out": round(b, 3),
+                    "line": line["id"]})
+    with open(os.path.join(root, "proposals", "takes.json"), "w", encoding="utf-8") as fh:
+        json.dump({"from": "takes-recorded.json", "lines": report}, fh, ensure_ascii=False, indent=2)
+    missing = [r["id"] for r in report if r["status"] == "missing"]
+    changed = [r["id"] for r in report if r["status"] == "changed"]
+    for r in report:
+        log(f"  {r['id']}: " + ("NO USABLE TAKE" if r["status"] == "missing" else
+                                f"{os.path.basename(r['file'])} {r['start']:.1f}-{r['end']:.1f}s, match {r['ratio']:.0%}"))
+    proj.set_state(pj, "align", "proposed")
+    if args.apply:
+        if missing:
+            die(f"no usable take for: {', '.join(missing)}. Record them again (nothing written to the timeline).")
+        pj["timeline"]["video"] = vid
+        pj["timeline"].setdefault("captions", {})["from"] = "media"
+        proj.set_state(pj, "align", "done")
+    proj.save(args.project, pj)
+    if args.json:
+        json.dump({"lines": report, "missing": missing, "changed": changed, "applied": args.apply},
+                  sys.stdout, ensure_ascii=False)
+        print()
+
+
 def main():
     p = argparse.ArgumentParser(description="Match script lines to a recording and pick the takes.")
     p.add_argument("-P", "--project", required=True)
-    p.add_argument("--media", required=True, help="media id of the recording in project.json")
+    p.add_argument("--media", help="media id of the recording in project.json (one long take)")
+    p.add_argument("--from-takes", action="store_true",
+                   help="use the takes teleprompter.py --obs recorded (proposals/takes-recorded.json)")
     p.add_argument("--threshold", type=float, default=0.6, help="0-1, how close a take must be (default 0.6)")
     p.add_argument("--track", type=int, help="audio track with the voice (default: the media's track, else 0)")
     p.add_argument("--apply", action="store_true", help="write the chosen takes into the timeline")
@@ -183,6 +248,10 @@ def main():
         script = proj.load_script(args.project)
     except proj.ProjectError as e:
         die(str(e))
+    if args.from_takes:
+        return from_takes(args, pj, script)
+    if not args.media:
+        die("give --media <id> (one recording) or --from-takes (teleprompter takes)")
     m = pj.get("media", {}).get(args.media)
     if not m:
         die(f"no media {args.media!r} in project.json")

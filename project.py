@@ -154,6 +154,9 @@ def validate(path, p, check_files=True):
             errs.append(f"media {mid}: file not found: {m['file']}")
         elif m.get("words") and check_files and not os.path.isfile(resolve(path, m["words"])):
             errs.append(f"media {mid}: words file not found: {m['words']}")
+        for fmt, f in (m.get("variants") or {}).items() if isinstance(m, dict) else ():
+            if check_files and not os.path.isfile(resolve(path, f)):
+                errs.append(f"media {mid}: {fmt} variant not found: {f}")
 
     def src_ok(where, item):
         src = item.get("src")

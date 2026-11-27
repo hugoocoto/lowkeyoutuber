@@ -9,8 +9,8 @@ stop for the person's OK where the flow says so.
    request; if two fit, ask. Then read `flows/<name>.md` and follow it step by step.
    - `ready`: every step has a tool. `partial`: some steps are done by you or the person until their
      tool exists (the flow says how). `planned`: tell the person it isn't available yet.
-2. `./lky backends` shows which models can be used here (LLM, transcription, TTS, music) and what
-   they can do. Say which voice will be used before generating narration.
+2. `./lky backends` shows which models can be used here (LLM, transcription, TTS, music, scene
+   renderer, judge, embeddings) and what they can do. Say which voice will be used before generating narration.
 3. Work in a project folder: `./lky new <flow> work/<name>`. Its format is in `docs/project.md`.
 4. When you come back to a project: `./lky status -P work/<name>` before anything else.
 5. Before saying a video is done: `./lky check -P work/<name>`, and look at frames of the result.
@@ -25,10 +25,12 @@ stop for the person's OK where the flow says so.
 - **GPU first.** Encoding uses NVENC when it works (the tools check), Whisper/TTS use CUDA; run them
   through `prime-run` when it exists. Before a long CPU-only job, say so.
 - **Code on screen must compile, and program output must come from really running it.** Never invent output.
+  scenes.py and capture.py run code and commands for real: only what the person approved in the
+  script, in a demo folder, never anything destructive.
 - **No secrets on screen**: API keys, tokens, real emails, customer data. Use demo data.
 - **Don't hand-roll ffmpeg for final renders.** Edit `project.json` and run `render.py`; the classic
   scripts (`publish.sh`, `cut.py`, `clips.py`) are fine for what they do.
-- **API keys** come from the environment (`ELEVENLABS_API_KEY`, `GEMINI_API_KEY`), never the config
+- **API keys** come from the environment (`ELEVENLABS_API_KEY`, `GEMINI_API_KEY`, `OBS_WEBSOCKET_PASSWORD`), never the config
   file or the project folder. Never print them.
 - Subtitles and AI-written text make mistakes: always have the person review `video.srt`, titles and
   descriptions. Recurring transcription fixes go to `~/.config/lowkeyoutuber/fixes.txt`.
@@ -51,6 +53,11 @@ progress on stderr), and skip work that's already done (`-f` to redo).
 | `thumbnail.py` | thumbnail designs |
 | `clips.py` | Shorts from a long video (`--propose`, then `--pick`) |
 | `upload.py` | private upload to YouTube (`--dry-run` checks everything first) |
+| `scenes.py` | animated scenes per script line (title, text, code, terminal, diagram, image, custom), rendered with HyperFrames |
+| `capture.py` | drives and records an app (web with Playwright, terminal, desktop on a virtual screen), logs every action, proposes zooms |
+| `teleprompter.py` | prompter page for the person; with `--obs` one OBS recording per take |
+| `judge.py` | automatic checks with a multimodal model: scenes, lines vs picture, Shorts proposals |
+| `search.py` | finds moments in past recordings by description (embeddings) |
 
 Exit code 3 from a tool means a person has to act (for example TTS is `none`: they record the lines).
 
