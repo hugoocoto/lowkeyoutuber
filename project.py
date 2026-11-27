@@ -1,10 +1,10 @@
 """
-project.py - The project folder every flow works in. Not meant to be run directly
+project.py - The project folder the tools share. Not meant to be run directly
 (use `lky new`, `lky status`, `lky check`). The format is documented in docs/project.md.
 
     myproject/
-      project.json   flow, inputs, state, media, timeline   (version 1)
-      script.json    lines of narration/scenes, when the flow has a script (edit me)
+      project.json   media, timeline, formats, state (+ inputs, and the flow it started from, if any)
+      script.json    lines of narration/scenes, when the video has a script (edit me)
       media/         inputs: recordings, captures, images, music
       narration/     TTS output or my takes (+ *.words.json)
       scenes/        generated scenes
@@ -26,7 +26,8 @@ class ProjectError(ValueError):
     pass
 
 
-def new(path, flow, lang="es", formats=("16:9",), inputs=None, fps=30):
+def new(path, flow=None, lang="es", formats=("16:9",), inputs=None, fps=30):
+    """flow: only a note of which example in flows/ the project started from (optional)."""
     if os.path.exists(os.path.join(path, "project.json")):
         raise ProjectError(f"{path} already has a project.json")
     for f in formats:
@@ -35,10 +36,12 @@ def new(path, flow, lang="es", formats=("16:9",), inputs=None, fps=30):
     os.makedirs(path, exist_ok=True)
     for d in DIRS:
         os.makedirs(os.path.join(path, d), exist_ok=True)
-    p = {"version": VERSION, "flow": flow, "lang": lang, "fps": fps,
+    p = {"version": VERSION, "lang": lang, "fps": fps,
          "formats": {f: list(SIZES[f]) for f in formats},
          "inputs": dict(inputs or {}), "state": {}, "backends_used": {}, "media": {},
          "timeline": {"video": [], "audio": [], "captions": {"burn": False, "style": "word-highlight"}}}
+    if flow:
+        p["flow"] = flow
     save(path, p)
     return p
 
@@ -55,7 +58,7 @@ def load(path):
         with open(f, encoding="utf-8") as fh:
             p = json.load(fh)
     except FileNotFoundError:
-        raise ProjectError(f"no project.json in {path} (create one with: lky new <flow> {path})")
+        raise ProjectError(f"no project.json in {path} (create one with: lky new {path})")
     except ValueError as e:
         raise ProjectError(f"{f} is not valid JSON: {e}")
     if p.get("version") != VERSION:

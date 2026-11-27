@@ -1,74 +1,98 @@
 # AGENTS.md — how an AI agent uses this repo
 
-This repo turns recordings, scripts and apps into finished YouTube videos. You (the agent) pick a
-**flow**, ask the person only for what's missing, run the **tools** on a **project folder**, and
-stop for the person's OK where the flow says so.
+This repo is a collection of tools for making videos: editing recordings, Shorts, narration, animated
+scenes, app captures, teleprompter takes, subtitles, titles, thumbnails and uploads. There is no fixed
+pipeline: pick the tools the request needs and combine them. `flows/` has worked examples of common
+videos (`./lky flows`); read one when it's close to the request, adapt it or ignore it.
 
-## Start here
-1. `./lky flows` lists the flows, their status and what each needs. Pick the one that matches the
-   request; if two fit, ask. Then read `flows/<name>.md` and follow it step by step.
-   - `ready`: every step has a tool. `partial`: some steps are done by you or the person until their
-     tool exists (the flow says how). `planned`: tell the person it isn't available yet.
-2. `./lky backends` shows which models can be used here (LLM, transcription, TTS, music, scene
-   renderer, judge, embeddings) and what they can do. Say which voice will be used before generating narration.
-3. Work in a project folder: `./lky new <flow> work/<name>`. Its format is in `docs/project.md`.
-4. When you come back to a project: `./lky status -P work/<name>` before anything else.
-5. Before saying a video is done: `./lky check -P work/<name>`, and look at frames of the result.
+## Getting going
+- `./lky backends` shows which models work on this machine (LLM, transcription, TTS, music, scene
+  renderer, judge, embeddings). Say which voice will be used before generating narration.
+- Tools that work on a timeline share a project folder: `./lky new work/<name>` (format in
+  `docs/project.md`). Tools that work on files don't need one; point their `-o` at the project's `out/`
+  to keep things together.
+- Coming back to a project: `./lky status -P work/<name>`.
+- Before saying a video is done: `./lky check -P work/<name>` (when you rendered with `render.py`) and
+  look at frames of the result.
 
-## Rules (from NOTES.md — the person's own lessons; read NOTES.md too)
-- **Approvals.** Cuts, scripts, take choices, zooms and anything that costs money or can't be undone
-  need the person's OK. Write proposals to `proposals/`, show them, wait. Never upload or publish
-  without being asked; uploads are always private.
-- **Only cut content** (rambling, false starts), and only when asked. **Never trim silences or speed
-  anything up**: pauses in screencasts usually have screen activity.
-- **Listen to every cut / join** (transcribe a ~12 s window around it): word times are loose.
-- **GPU first.** Encoding uses NVENC when it works (the tools check), Whisper/TTS use CUDA; run them
-  through `prime-run` when it exists. Before a long CPU-only job, say so.
-- **Code on screen must compile, and program output must come from really running it.** Never invent output.
-  scenes.py and capture.py run code and commands for real: only what the person approved in the
-  script, in a demo folder, never anything destructive.
-- **No secrets on screen**: API keys, tokens, real emails, customer data. Use demo data.
-- **Don't hand-roll ffmpeg for final renders.** Edit `project.json` and run `render.py`; the classic
-  scripts (`publish.sh`, `cut.py`, `clips.py`) are fine for what they do.
-- **API keys** come from the environment (`ELEVENLABS_API_KEY`, `GEMINI_API_KEY`, `OBS_WEBSOCKET_PASSWORD`), never the config
-  file or the project folder. Never print them.
-- Subtitles and AI-written text make mistakes: always have the person review `video.srt`, titles and
-  descriptions. Recurring transcription fixes go to `~/.config/lowkeyoutuber/fixes.txt`.
+## How much to ask
+It depends on what the person asked for.
+- **"Just do it" / automation:** don't stop to ask. Make sensible choices, say what you chose at the end.
+- **Editing together:** keep the person aware of each step and show them what matters before going on:
+  cuts, scripts, take choices, zooms, titles, subtitles. The `Check-in` points in `flows/` are where
+  that usually happens. Proposals go to `proposals/`.
+- Either way, ask before anything that costs money (cloud TTS, paid APIs) or can't be undone.
+
+## Rules
+- **Uploads are private.** Never upload unless asked; the person publishes in YouTube Studio.
+- **No secrets on screen:** API keys, tokens, real emails, customer data. Use demo data.
+- **API keys** come from the environment (`ELEVENLABS_API_KEY`, `GEMINI_API_KEY`, `OBS_WEBSOCKET_PASSWORD`),
+  never the config file or the project folder. Never print them.
+- **GPU first.** Every encode, transcription or model run uses the NVIDIA GPU when it's there: NVENC
+  (`yt_common.video_encoder("auto", q)` from Python; `-c:v h264_nvenc -preset p5 -tune hq -rc vbr -cq 18
+  -b:v 0` in shell), CUDA for Whisper/TTS/Ollama. On a hybrid laptop, run GPU work through `prime-run`
+  (the Python tools set its variables themselves). Never default to libx264; before a long CPU-only job, say so.
+
+## Recommendations (learned on real videos; break them when you have a reason)
+- **Pauses may have something on screen.** In screencasts, silence often comes with typing, a program
+  running or scrolling docs. Before cutting a pause or speeding it up, look at its frames or ask.
+  `autocut.py` cuts every pause: fine for talking-head footage, risky for screencasts.
+- **Listen to every cut and join** (transcribe ~12 s around it). Whisper's word times are loose on fast
+  speech: a stray syllable from the word before, or a dangling reference ("I'll do it in another video"
+  after the sentence it points to was cut). `cut.py --check` prints the words on both sides of each cut.
+- **Transcribe the raw audio,** not the audio cleaned by `process-voice.sh`: on a real video the cleaned
+  one lost punctuation and misheard words (`--audio-from` does this). Recurring mistakes go in
+  `~/.config/lowkeyoutuber/fixes.txt`; names and jargon in the config's `JARGON`.
+- **Final renders through `render.py`** (edit `project.json`, then render) rather than hand-written ffmpeg:
+  it handles captions, zooms, ducking, loudness and several formats, and `lky check` can verify it.
+- **Facecam** (only if the video has one): its box moves between recordings. Check it on a frame
+  (`config CAM`, or `--cam x:y:w:h`); `thumbnail.py` and `clips.py` warn and save `cam_check.jpg` when the
+  box looks empty. No facecam: `--cam none`.
+- **Shorts:** avoid ones that cross a hard cut, and check how each one ends. `clips.py --propose`, then
+  `--pick 1,3` renders chosen ones without asking the LLM again.
+- **Sync:** check it by decoding the audio (`ffmpeg -i x.mkv -map 0:a a.wav`) and comparing with frames;
+  summing packet durations in MKV is wrong.
+- **Upload:** the first run needs `~/.config/lowkeyoutuber/client_secret.json` and a browser login, which
+  the person does with `! python upload.py ...`; Google expires the token after 7 days in Testing. One long
+  video plus 3 Shorts uses most of a day's quota. Don't run `pkill -f upload.py; python upload.py ...` in
+  one command: `pkill -f` kills the shell running that line.
+- Code shown on screen should compile; `scenes.py` compiles and runs it for real, so its output is real.
 
 ## Tools
-Every tool explains itself with `-h`. Most take `-P <project>` and `--json` (results on stdout,
+Every tool explains itself with `-h`. Project tools take `-P <project>` and `--json` (results on stdout,
 progress on stderr), and skip work that's already done (`-f` to redo).
 
 | Tool | Does |
 |---|---|
-| `lky` | flows, new, add-media, status, check, backends, skills |
-| `tts.py` | narrates `script.json` with the configured TTS backend; `--place` builds the timeline from it |
-| `align.py` | matches a recording to `script.json`, keeps the last good take of each line |
+| `lky` | new, add-media, status, check, backends, flows, skills |
 | `render.py` | timeline → `out/video*.mp4` + `out/video.srt` (zooms, captions, ducking, -14 LUFS) |
-| `publish.sh` | classic one-command path: clean audio, subtitles, metadata, thumbnails, Shorts |
-| `process-voice.sh` | voice clean-up and loudness |
-| `subtitles.py` | Whisper transcript (`<video>.words.json`, shared by every tool) and SRT |
-| `cut.py` / `autocut.py` | remove listed parts / pauses and retakes (autocut: only if the person asks) |
-| `meta.py` | chapters, titles, description, tags, thumbnail texts |
-| `thumbnail.py` | thumbnail designs |
-| `clips.py` | Shorts from a long video (`--propose`, then `--pick`) |
-| `upload.py` | private upload to YouTube (`--dry-run` checks everything first) |
+| `tts.py` | narrates `script.json` with the configured TTS backend; `--place` builds the timeline from it |
+| `align.py` | matches a recording (or teleprompter takes) to `script.json`, keeps the last good take of each line |
 | `scenes.py` | animated scenes per script line (title, text, code, terminal, diagram, image, custom), rendered with HyperFrames |
 | `capture.py` | drives and records an app (web with Playwright, terminal, desktop on a virtual screen), logs every action, proposes zooms |
 | `teleprompter.py` | prompter page for the person; with `--obs` one OBS recording per take |
 | `judge.py` | automatic checks with a multimodal model: scenes, lines vs picture, Shorts proposals |
 | `search.py` | finds moments in past recordings by description (embeddings) |
+| `subtitles.py` | Whisper transcript (`<video>.words.json`, shared by every tool) and SRT/VTT |
+| `cut.py` | removes the parts listed in a file |
+| `autocut.py` | removes pauses and retakes automatically (see the pauses recommendation) |
+| `process-voice.sh` | voice clean-up (noise, EQ, compression) and loudness |
+| `meta.py` | chapters, titles, description, tags, thumbnail texts |
+| `thumbnail.py` | thumbnail designs |
+| `clips.py` | vertical Shorts with word captions from a long video (`--propose`, then `--pick`) |
+| `upload.py` | private upload of a folder (`video.mp4`, `titles.txt`, `description.txt`...) to YouTube; `--dry-run` checks it |
 
 Exit code 3 from a tool means a person has to act (for example TTS is `none`: they record the lines).
 
 ## Backends (swappable models)
 `backends/<kind>/<name>.py`, chosen by `PROFILE` (`local` = no API keys, `cloud`) or a per-kind chain in
 `~/.config/lowkeyoutuber/config` (`TTS="elevenlabs,chatterbox,none"`): the first usable one is used,
-the next ones are fallbacks. Flows never name a provider. To add one, copy a backend of the same kind;
-`tests/test_backends.py` runs the contract tests against every backend.
+the next ones are fallbacks. Tools ask for a capability, never a provider. To add one, copy a backend of
+the same kind; `tests/test_backends.py` runs the contract tests against every backend.
 
 ## Changing the repo
-- After editing a flow: `./lky skills` (regenerates `.claude/skills/`), and `python -m pytest tests`.
-- New flows are markdown in `flows/` with the same header and sections; prefer combining existing tools
-  over writing new scripts.
-- Write what you learned on a real run into NOTES.md, as the person does.
+- After editing a flow or this tool list: `./lky skills` (regenerates `.claude/skills/`), then
+  `python -m pytest tests`. Tests use fake backends: never point them at a paid one.
+- Prefer adding a tool that does one thing, with `-h`, `--json` and files in/files out, over a script that
+  chains others.
+- New lessons from a real video go in the Recommendations above.

@@ -24,8 +24,15 @@ USAGE
     autocut.py raw.mkv -t 1 --pause 0.8     # keep pauses up to 0.8 s
     autocut.py raw.mkv -t 1 --encoder libx264
 
+CAREFUL WITH SCREENCASTS
+    Pauses in a screencast often have something happening on screen (typing,
+    a program running, scrolling docs) even when nobody speaks. Cutting them
+    loses that. Before using this on a screen recording, look at the pauses
+    (--dry-run lists them) or ask the person; cut.py removes only the parts
+    you list, which is safer for those.
+
 THEN
-    process-voice.sh -t 1 -m 0 raw_cut.mkv  # or: publish.sh -t 1 -m 0 raw_cut.mkv
+    process-voice.sh -t 1 -m 0 raw_cut.mkv  # clean voice, -14 LUFS
 
 Always watch the result: Whisper can miss quiet words, and the retake
 detector can be wrong. Use --dry-run first on a new kind of recording.

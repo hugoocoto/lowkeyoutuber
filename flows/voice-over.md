@@ -9,7 +9,7 @@ inputs: the video (required); what it's about and who it's for; tone; language; 
 # Voice-over for an existing video
 
 ## Steps
-1. **Project:** `./lky new voice-over work/<name> --format 16:9` (or the video's own shape),
+1. **Project:** `./lky new work/<name> --flow voice-over --format 16:9` (or the video's own shape),
    `./lky add-media -P work/<name> video.mp4 --id src`.
 2. **Understand the video:** find scene changes and look at them:
    `ffmpeg -i video.mp4 -vf "select='gt(scene,0.3)',showinfo" -vsync vfr work/<name>/checks/scene_%03d.jpg 2>&1 | grep pts_time`
@@ -18,7 +18,7 @@ inputs: the video (required); what it's about and who it's for; tone; language; 
 3. **Script with times:** `script.json` lines with `"at"` = second in the video where the line starts.
    Leave the line's slot (until the next `at`) longer than it takes to say: about 2.5 words per second
    in Spanish, 2.8 in English. Describe what the viewer sees and why it matters, not every click.
-   - **APPROVAL:** show the person each line with its time and a frame of that moment.
+   - **Check-in:** show the person each line with its time and a frame of that moment.
 4. **Narration:** `./tts.py -P work/<name>` (draft first with `--draft`).
 5. **Timeline:** set `timeline.video` to the whole video:
    `[{"src": "src", "in": 0, "out": <duration>, "audio": false}]` (`"audio": true, "gain_db": -18`

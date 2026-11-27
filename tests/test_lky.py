@@ -29,11 +29,36 @@ def test_flows_parse_and_have_the_sections():
             assert "## Not built yet" in f["body"], f"{f['name']} must say what's missing"
 
 
-def test_skills_are_in_sync_with_flows():
+def test_skill_is_in_sync():
+    path = os.path.join(ROOT, ".claude", "skills", lky.SKILL_NAME, "SKILL.md")
+    assert os.path.isfile(path), "run ./lky skills"
+    assert open(path, encoding="utf-8").read() == lky.skill_text(lky.flows()), "run ./lky skills"
+
+
+def test_no_stale_per_flow_skills():
+    d = os.path.join(ROOT, ".claude", "skills")
     for f in lky.flows():
-        path = os.path.join(ROOT, ".claude", "skills", f["name"], "SKILL.md")
-        assert os.path.isfile(path), f"run ./lky skills ({f['name']} has no skill)"
-        assert open(path, encoding="utf-8").read() == lky.skill_text(f), f"run ./lky skills ({f['name']} changed)"
+        assert not os.path.isdir(os.path.join(d, f["name"])), "run ./lky skills (it removes the old ones)"
+
+
+def test_skill_frontmatter_is_valid_yaml():
+    import pytest
+    yaml = pytest.importorskip("yaml")
+    meta = yaml.safe_load(lky.skill_text(lky.flows()).split("---")[1])
+    assert meta["name"] == lky.SKILL_NAME and "video" in meta["description"]
+
+
+def test_new_without_a_flow(tmp_path):
+    d = str(tmp_path / "free")
+    run("new", d, "--script")
+    pj = json.load(open(os.path.join(d, "project.json")))
+    assert "flow" not in pj and os.path.isfile(os.path.join(d, "script.json"))
+    st = json.loads(run("status", "-P", d, "--json").stdout)
+    assert st["flow"] is None and st["problems"] == []
+    d2 = str(tmp_path / "noted")
+    run("new", d2, "--flow", "voice-over")
+    assert json.load(open(os.path.join(d2, "project.json")))["flow"] == "voice-over"
+    assert run("new", str(tmp_path / "x"), "--flow", "no-such-flow", ok=False).returncode != 0
 
 
 def test_project_commands(tmp_path, media):

@@ -9,7 +9,7 @@ inputs: the topic (required); notes, code or links to base it on; language (defa
 # Generated Short
 
 ## Steps
-1. **Project:** `./lky new generated-short work/<name> --format 9:16` (add `--format 16:9` for a
+1. **Project:** `./lky new work/<name> --flow generated-short --format 9:16` (add `--format 16:9` for a
    landscape version too). Check `./lky backends --kind tts`: tell the person which voice will be used
    (a clone of their voice, a preset voice, or none = they record it).
 2. **Script:** write `work/<name>/script.json` (docs/project.md):
@@ -21,7 +21,7 @@ inputs: the topic (required); notes, code or links to base it on; language (defa
      (`"main.c"` → `"main punto c"`, symbols, acronyms).
    - Code is compiled for real (`"check": "program"` or `"fragment"`), and with `"run": true` its real
      output is shown. Terminal scenes run their commands for real. Never write output by hand.
-   - **APPROVAL:** show the person the script: the narration and what each scene shows.
+   - **Check-in:** show the person the script: the narration and what each scene shows.
 3. **Narration:** `./tts.py -P work/<name> --draft` first (cheaper), listen to a couple of lines, then
    `./tts.py -P work/<name>`. Exit code 3 = TTS is `none`: continue with flows/script-then-record.md.
    Lines with a low match (`--verify`) were misread: fix `spoken` and run `--lines <id> -f`.
@@ -35,7 +35,7 @@ inputs: the topic (required); notes, code or links to base it on; language (defa
 6. **Timeline:** `./tts.py -P work/<name> --place` puts each line's voice over its scene. Turn captions on
    in `project.json`: `"captions": {"burn": true, "style": "word-highlight"}`.
 7. **Preview:** `./render.py -P work/<name> --preview --frames auto` and look at the frames.
-   - **APPROVAL:** the person watches `out/preview.mp4`.
+   - **Check-in:** the person watches `out/preview.mp4`.
 8. **Render:** `./render.py -P work/<name>` → `out/video.mp4` (+ `video_16x9.mp4`) and `out/video.srt`.
 9. **Metadata (optional):** `python meta.py work/<name>/out/video.mp4 -o work/<name>/out`.
 

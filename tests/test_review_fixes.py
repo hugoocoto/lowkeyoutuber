@@ -150,13 +150,6 @@ def test_changing_a_media_track_renders_again(tmp_path, media):
 
 
 # --- lky ----------------------------------------------------------------------------------------
-def test_skill_frontmatter_is_valid_yaml():
-    yaml = pytest.importorskip("yaml")
-    for f in lky.flows():
-        meta = yaml.safe_load(lky.skill_text(f).split("---")[1])
-        assert meta["name"] == f["name"] and meta["description"].startswith("lowkeyoutuber flow: ")
-
-
 def test_new_keeps_an_existing_script(tmp_path):
     d = tmp_path / "p"
     d.mkdir()

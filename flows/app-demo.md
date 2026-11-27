@@ -9,13 +9,13 @@ inputs: the app (URL, binary, or repo plus how to run it) (required); what to sh
 # App demo
 
 ## Steps
-1. **Project:** `./lky new app-demo work/<name> --format 16:9 [--format 9:16]`.
+1. **Project:** `./lky new work/<name> --flow app-demo --format 16:9 [--format 9:16]`.
 2. **Explore the app** (run it, read its README, try the main paths). Use fake/demo data only: no real
    accounts, tokens, emails or customer data may appear on screen. If it needs a login, ask.
 3. **Demo plan:** `script.json`, one line per step: `text` = narration, `actions` = what you'll do
    (capture.py -h): web `{"click": "text=Settings"}`, `{"type": ["#email", "ana@example.com"]}`,
    `{"goto": "/pricing"}`; terminal/desktop `{"run": "make test"}`, `{"key": "ctrl+s"}`, `{"wait": 1}`.
-   - **APPROVAL:** the person approves the steps and the narration.
+   - **Check-in:** the person approves the steps and the narration.
 4. **Narration first:** `./tts.py -P work/<name>` (the capture then waits for each line's voice, so the
    voice never runs into the next action).
 5. **Capture:** start the app, then
@@ -37,7 +37,7 @@ inputs: the app (URL, binary, or repo plus how to run it) (required); what to sh
    `cp -r work/<name> work/<name>-zooms && ./capture.py -P work/<name>-zooms --apply &&
    ./render.py -P work/<name>-zooms --preview --frames <each zoom's at + dur/2>` (at `at` itself the zoom hasn't started yet); show the frames, then delete
    the copy.
-   - **APPROVAL:** the person OKs, edits or drops zooms in `proposals/zooms.json` (of the real project);
+   - **Check-in:** the person OKs, edits or drops zooms in `proposals/zooms.json` (of the real project);
      then `./capture.py -P work/<name> --apply`.
 7. **Voice on the timeline:** `./tts.py -P work/<name> --place` (lines start at their `at`).
 8. **End card (optional):** an image, or a rendered `title` scene (scenes.py), with a `dur` at the END of

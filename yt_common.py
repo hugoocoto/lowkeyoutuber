@@ -95,6 +95,19 @@ def load_config():
 CONFIG = load_config()
 
 
+def use_nvidia_gpu():
+    """On hybrid-graphics laptops (prime-run installed), send GPU work to the NVIDIA card, as
+    `prime-run` does, for this process and everything it starts (ffmpeg, Chrome, models).
+    Variables the person already set are kept."""
+    if shutil.which("prime-run"):
+        for k, v in (("__NV_PRIME_RENDER_OFFLOAD", "1"), ("__VK_LAYER_NV_optimus", "NVIDIA_only"),
+                     ("__GLX_VENDOR_LIBRARY_NAME", "nvidia")):
+            os.environ.setdefault(k, v)
+
+
+use_nvidia_gpu()
+
+
 def log(*a, end="\n"):
     print(*a, file=sys.stderr, end=end, flush=True)
 
