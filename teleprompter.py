@@ -68,7 +68,6 @@ function lost(e){   // the answer never came: the recording state is unknown unt
   const r=document.getElementById('rec');r.textContent='? REC unknown';r.className='';
   document.getElementById('err').textContent='No answer from teleprompter.py ('+e+'). Check OBS before going on; '
     +'any key retries.';
-  queue=Promise.resolve();
   setTimeout(()=>call('state'),1500);
 }
 async function send(a){const r=await fetch('/api/'+a,{method:a==='state'?'GET':'POST'});const s=await r.json();show(s);}
