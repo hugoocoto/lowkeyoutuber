@@ -464,12 +464,28 @@ def chunk_transcript(sentences, max_chars, overlap=4):
 # ---------------------------------------------------------------------------
 # Video encoding
 # ---------------------------------------------------------------------------
+_NVENC = None
+
+
+def nvenc_works():
+    """ffmpeg built with NVENC isn't enough: it needs an NVIDIA GPU and driver too. A tiny
+    test encode finds out (once per run)."""
+    global _NVENC
+    if _NVENC is None:
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True)
+        _NVENC = " h264_nvenc " in r.stdout and subprocess.run(
+            ["ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i", "color=s=256x256:d=0.1",
+             "-c:v", "h264_nvenc", "-f", "null", "-"], capture_output=True).returncode == 0
+        if not _NVENC and " h264_nvenc " in r.stdout:
+            log("NVENC is in ffmpeg but can't be used here (no NVIDIA GPU or driver): encoding on the CPU.")
+    return _NVENC
+
+
 def video_encoder(name, quality):
     """ffmpeg video encoder args. "auto" = NVENC on the NVIDIA GPU if ffmpeg has it,
     else libx264. quality is a CRF/CQ value (lower = better, 18 ~ visually lossless)."""
     if name == "auto":
-        r = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True)
-        name = "h264_nvenc" if " h264_nvenc " in r.stdout else "libx264"
+        name = "h264_nvenc" if nvenc_works() else "libx264"
     if name == "libx264":
         return ["-c:v", "libx264", "-preset", "veryfast", "-crf", str(quality)]
     if name.endswith("_nvenc"):

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# lky - entry point for people and AI agents (see AGENTS.md). Runs lky.py with the
+# toolkit's Python: $PYTHON, else ~/.venvs/subs/bin/python, else python3.
+HERE="$(dirname "$(readlink -f "$0")")"
+PY="${PYTHON:-}"
+if [[ -z "$PY" ]]; then
+  if [[ -x "$HOME/.venvs/subs/bin/python" ]]; then PY="$HOME/.venvs/subs/bin/python"; else PY=python3; fi
+fi
+exec "$PY" "$HERE/lky.py" "$@"

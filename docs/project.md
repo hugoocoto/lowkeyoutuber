@@ -1,0 +1,106 @@
+# Project format (version 1)
+
+Every flow works in a project folder made by `./lky new <flow> <dir>`. Agents edit `project.json`
+and `script.json`; `render.py` is the only thing that turns them into video.
+
+```
+myproject/
+  project.json   flow, formats, media, timeline, state
+  script.json    the lines (flows with a script)
+  media/         inputs (or referenced by absolute path: big recordings aren't copied)
+  narration/     tts.py output: <id>.wav, <id>.words.json, <id>.json
+  proposals/     waiting for a person's OK: cuts.txt, takes.json, ...
+  checks/        report.json, frames/
+  out/           video.mp4, video_9x16.mp4, video.srt
+```
+
+## project.json
+
+```json
+{
+  "version": 1,
+  "flow": "generated-short",
+  "lang": "es",
+  "fps": 30,
+  "formats": {"9:16": [1080, 1920]},
+  "inputs": {"topic": "the comma operator"},
+  "state": {"tts": "done", "render": "pending"},
+  "media": {
+    "rec":         {"file": "/home/hugo/rec/rec.mkv", "kind": "video", "track": 1, "words": "/home/hugo/rec/rec.words.json"},
+    "card":        {"file": "media/card.png", "kind": "image"},
+    "vo:01-hook":  {"file": "narration/01-hook.wav", "words": "narration/01-hook.words.json", "kind": "audio"}
+  },
+  "timeline": {
+    "video": [
+      {"src": "card", "dur": 2.5},
+      {"src": "rec", "in": 312.0, "out": 340.5, "zooms": [{"at": 4.0, "dur": 6.0, "rect": [0.05, 0.4, 0.5, 0.3]}]},
+      {"color": "#101010", "dur": 1.0}
+    ],
+    "audio": [
+      {"src": "vo:01-hook", "at": 0.3},
+      {"src": "media/music.mp3", "at": 0, "duck": true, "gain_db": -22}
+    ],
+    "captions": {"burn": true, "style": "word-highlight", "highlight": "FFD700"}
+  }
+}
+```
+
+- **formats**: name → `[width, height]` (even numbers). The first one renders to `out/video.mp4`,
+  the others to `out/video_<name>.mp4` (`9:16` → `video_9x16.mp4`).
+- **media**: id → file. Paths are relative to the project, or absolute. `words` is a transcript in the
+  `*.words.json` shape (`{"words": [{"w", "s", "e"}]}`); `track` is the voice's audio track.
+- **state**: step → `pending | proposed | approved | done | skipped | needs-human | failed`
+  (or `{"state": ..., "note": ...}`). `proposed` and `needs-human` mean: ask the person.
+
+### timeline.video (played one after another)
+| field | meaning |
+|---|---|
+| `src` | media id or file (video, image) |
+| `color` | instead of `src`: a solid colour (`"#000000"`, `"black"`) |
+| `in`, `out` | seconds in the source (videos) |
+| `dur` | length in seconds (images, colours; or a video from its start) |
+| `audio` | keep the clip's own sound (default `true`), on its `track` |
+| `gain_db` | volume of the clip's sound |
+| `fit` | `pad` (black bars), `blur` (blurred copy behind), `fill` (crop). Default: `blur` when the shape differs by more than 15 %, else `pad` |
+| `zooms` | `[{"at", "dur", "rect": [x, y, w, h]}]`: `at` from the item's start, `rect` as fractions of the source frame (0-1). Eased in and out over 0.45 s; zooms of one item must not overlap |
+
+### timeline.audio (placed at a time, mixed)
+| field | meaning |
+|---|---|
+| `src` | media id or file |
+| `at` | start, seconds on the timeline |
+| `in`, `out` | part of the source (default: all of it) |
+| `gain_db` | volume (default 0; -22 for `duck`) |
+| `duck` | music: goes down while anything else sounds (sidechain) |
+| `track` | audio track of the source |
+
+Audio past the end of the video is cut. The mix is normalized to -14 LUFS / -1 dBTP.
+
+### timeline.captions
+Word timings come from the media's `words` (TTS lines, transcribed recordings), moved to where they
+play. `out/video.srt` is always written from them. `burn: true` draws them on the picture;
+`style`: `word-highlight` (current word highlighted, like clips.py) or `plain`.
+
+## script.json
+
+```json
+{
+  "title": "El operador coma",
+  "lang": "es",
+  "lines": [
+    {"id": "01-hook", "text": "¿Sabías que esta línea compila?", "visual": "media/01.png"},
+    {"id": "02-code", "text": "int x = (1, 2, 3);", "spoken": "int x igual a uno, dos, tres", "visual": {"src": "rec", "in": 12.0}},
+    {"id": "03-why",  "text": "La coma evalúa todo y se queda con lo último.", "at": 9.5}
+  ]
+}
+```
+
+| field | used by |
+|---|---|
+| `id` | file names (`narration/<id>.wav`), media ids (`vo:<id>`) |
+| `text` | captions and subtitles (exact spelling) |
+| `spoken` | what TTS says, when different from `text` |
+| `visual` | `tts.py --place`: what's on screen during the line (a file or media id, or an object like a timeline video item) |
+| `at` | `tts.py --place`: start time for voice-overs on an existing video |
+| `pad_before`, `pad_after` | first/last line: seconds of picture before the voice starts / after it ends (0.3 / 0.8) |
+| anything else | free for the flow (`action`, `notes`, ...) |

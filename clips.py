@@ -33,6 +33,7 @@ USAGE
     clips.py video.mp4 --preview                 # one test frame, to check the layout
     clips.py video.mp4 --yes                     # no questions, render everything
     clips.py video.mp4 --pick 1,3                # render clips 1 and 3 of the last run's clips.json
+    clips.py video.mp4 --propose                 # only propose (clips.json), render later with --pick
 
 LAYOUTS (1080x1920)
     stack   blurred background, screen recording on top, facecam below,
@@ -363,6 +364,9 @@ def main():
     g.add_argument("--summary", action="store_true", help="also summarize the whole video (printed to stdout)")
     g.add_argument("--no-clips", action="store_true", help="skip clips (use with --summary)")
     g.add_argument("-y", "--yes", action="store_true", help="don't ask, render all proposed clips")
+    g.add_argument("--propose", action="store_true",
+                   help="only write the proposals to clips.json and stop (for agents: show them to the "
+                        "person, then render the approved ones with --pick)")
     g.add_argument("--preview", action="store_true", help="render one test frame of the first clip and stop")
     g.add_argument("--pick", metavar="N,N",
                    help="render these clips from clips.json in the output folder (numbers as listed there), "
@@ -452,6 +456,11 @@ def main():
             die("The LLM proposed no usable clips. Try a bigger --llm, a wider --min/--max, or check the transcript.")
         save_clips(saved, clips)
         chosen = clips
+        if args.propose:
+            for n, c in enumerate(clips, 1):
+                log(f"  {n}. [{mmss(c['start'])}-{mmss(c['end'])}] {c['title']}: {c['summary']}")
+            log(f"Proposals saved in {saved}. Render the approved ones with --pick N,N.")
+            return
         if not args.yes and not args.preview and sys.stdin.isatty():
             chosen = review(clips, args.duration)   # edits times in place, so save again
             save_clips(saved, clips)
