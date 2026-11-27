@@ -7,6 +7,18 @@ chapters, titles, description, tags, thumbnails and Shorts. One command, runs on
 ./publish.sh my-video.mp4
 ```
 
+## Ask an AI to do it
+
+Open this folder in Claude Code (or Codex, OpenCode...) and say what you want: "edit this
+recording", "make a Short about the comma operator", "add a voice to this demo", "write me a
+script and I'll record it". The agent reads `AGENTS.md`, picks a **flow** from `flows/`, asks
+only for what's missing, and stops for your OK before cutting, generating or uploading anything.
+
+```
+./lky flows       # what it can do, and what each flow needs
+./lky backends    # which models it can use on this machine
+```
+
 ## Quick start
 
 ```
@@ -99,3 +111,42 @@ and `cam_check.jpg` showing where it points.
 | `upload.py` | Uploads the result to YouTube. |
 | `cut.py` | Removes the parts of a recording you list in a text file. |
 | `autocut.py` | Removes every pause and repeated sentence automatically. |
+
+For flows (see `AGENTS.md`), working in a project folder (`docs/project.md`):
+
+| Script | What it does |
+|---|---|
+| `lky` | Lists flows, creates projects, shows their state, runs the final checks, lists backends. |
+| `tts.py` | Narrates a script with the configured voice (yours, cloned, or a preset), with word timings. |
+| `align.py` | Matches a recording to the script and keeps the last good take of each line. |
+| `render.py` | Renders the project's timeline: clips, images, zooms, captions, music under the voice, -14 LUFS. |
+
+## Models: all swappable
+
+Every model sits behind one interface (`backends/`), and the config picks which one, with
+fallbacks: `PROFILE="local"` needs no API keys; `PROFILE="cloud"` uses paid APIs where they're
+better. Override one kind at a time:
+
+```
+PROFILE="local"                            # local | cloud
+TTS="elevenlabs,chatterbox,none"           # tried in order; "none" = you record it
+VOICE_REF="~/.config/lowkeyoutuber/voice_ref.wav"   # 10-30 s of your clean voice, for cloning
+ELEVEN_VOICE_ID="..."                      # your cloned voice on ElevenLabs
+MUSIC_DIR="~/Music/lowkeyoutuber"          # tracks you're allowed to use
+```
+
+| Kind | Backends |
+|---|---|
+| LLM | Claude Code, Codex, OpenCode (your own sign-in), Ollama (local) |
+| Transcription | faster-whisper (local) |
+| Voice | Chatterbox Multilingual (local, clones your voice), Kokoro (local, preset voices, CPU), ElevenLabs (cloud, `ELEVENLABS_API_KEY`), none |
+| Music | a local folder |
+
+Install the local voices in the same venv: `pip install chatterbox-tts` and/or `pip install kokoro soundfile`
+(`sudo pacman -S espeak-ng` for Kokoro in Spanish). API keys go in the environment, never in the config.
+
+## Tests
+
+```
+python -m pytest tests     # no GPU, network or API keys needed
+```

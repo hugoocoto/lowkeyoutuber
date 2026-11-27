@@ -1,0 +1,416 @@
+#!/usr/bin/env python3
+"""
+lky - Entry point for people and AI agents. Start here (see AGENTS.md).
+
+COMMANDS
+    lky flows                         the recipes this repo knows, with what each needs
+    lky new FLOW DIR [--lang es] [--format 16:9 --format 9:16] [--input key=value ...]
+                                      create a project folder for a flow
+    lky add-media -P DIR FILE [--id rec1] [--kind video|audio|image] [--track N] [--copy]
+                                      register an input file in project.json
+    lky status -P DIR                 what's done, waiting for approval or missing
+    lky check -P DIR                  final checks: loudness, sync, subtitles, chapters, files
+    lky backends [--kind tts]         which models can be used here, and what they can do
+    lky skills                        regenerate .claude/skills/ from flows/ (after editing a flow)
+
+    Every command takes --json for machine-readable output on stdout.
+"""
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+
+import backends  # noqa: E402
+import project as proj  # noqa: E402
+from yt_common import die  # noqa: E402
+
+FLOWS_DIR = os.path.join(HERE, "flows")
+SKILLS_DIR = os.path.join(HERE, ".claude", "skills")
+VIDEO_EXT = (".mp4", ".mkv", ".mov", ".webm", ".avi")
+AUDIO_EXT = (".wav", ".mp3", ".flac", ".ogg", ".m4a", ".opus")
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+
+
+def out(data, as_json, text):
+    if as_json:
+        json.dump(data, sys.stdout, ensure_ascii=False, indent=2)
+        print()
+    else:
+        print(text)
+
+
+# ---------------------------------------------------------------------------
+# Flows
+# ---------------------------------------------------------------------------
+def parse_flow(path):
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    m = re.match(r"---\n(.*?)\n---\n", text, re.S)
+    if not m:
+        raise ValueError(f"{path}: missing the --- header ---")
+    meta = {}
+    for line in m.group(1).splitlines():
+        if ":" in line:
+            k, v = line.split(":", 1)
+            meta[k.strip()] = v.strip()
+    for k in ("name", "summary", "status"):
+        if not meta.get(k):
+            raise ValueError(f"{path}: header needs '{k}'")
+    if meta["name"] != os.path.splitext(os.path.basename(path))[0]:
+        raise ValueError(f"{path}: name must match the file name")
+    meta["inputs"] = [x.strip() for x in meta.get("inputs", "").split(";") if x.strip()]
+    meta["script"] = meta.get("script", "no") == "yes"
+    meta["file"] = os.path.relpath(path, HERE)
+    meta["body"] = text[m.end():]
+    return meta
+
+
+def flows():
+    return [parse_flow(os.path.join(FLOWS_DIR, f)) for f in sorted(os.listdir(FLOWS_DIR)) if f.endswith(".md")]
+
+
+def cmd_flows(args):
+    fl = flows()
+    data = [{k: v for k, v in f.items() if k != "body"} for f in fl]
+    width = max(len(f["name"]) for f in fl)
+    text = "\n".join(f"{f['name']:<{width}}  [{f['status']}]  {f['summary']}\n{'':<{width}}  needs: "
+                     + "; ".join(f["inputs"]) for f in fl)
+    text += "\n\nRead flows/<name>.md and follow it. Status: ready = every step works; partial = some steps " \
+            "are done by hand or by the agent until their tool exists (the flow says which); planned = not usable yet."
+    out(data, args.json, text)
+
+
+def skill_text(f):
+    desc = f["summary"].replace("\n", " ")
+    # quoted (a JSON string is a valid YAML scalar): "flow: ..." unquoted is not valid YAML
+    description = json.dumps(f"lowkeyoutuber flow: {desc} Use when the user asks for this kind of video "
+                             f"work in this repo.", ensure_ascii=False)
+    return (f"---\nname: {f['name']}\ndescription: {description}\n---\n\n"
+            f"Follow `{f['file']}` in this repository exactly, step by step, including every approval "
+            f"it asks for. Read `AGENTS.md` first if you haven't in this session. "
+            f"Status of this flow: {f['status']}.\n")
+
+
+def cmd_skills(args):
+    written = []
+    for f in flows():
+        d = os.path.join(SKILLS_DIR, f["name"])
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "SKILL.md"), "w", encoding="utf-8") as fh:
+            fh.write(skill_text(f))
+        written.append(os.path.relpath(os.path.join(d, "SKILL.md"), HERE))
+    out(written, args.json, "\n".join(written))
+
+
+# ---------------------------------------------------------------------------
+# Projects
+# ---------------------------------------------------------------------------
+def cmd_new(args):
+    names = {f["name"]: f for f in flows()}
+    if args.flow not in names:
+        die(f"unknown flow {args.flow!r}. Known: {', '.join(names)}")
+    inputs = {}
+    for kv in args.input or []:
+        k, sep, v = kv.partition("=")
+        if not sep or not k:
+            die(f"--input takes key=value, got {kv!r}")
+        inputs[k.strip()] = v.strip()
+    try:
+        pj = proj.new(args.dir, args.flow, lang=args.lang, formats=args.format or ["16:9"], inputs=inputs)
+    except proj.ProjectError as e:
+        die(str(e))
+    script = os.path.join(args.dir, "script.json")
+    if names[args.flow]["script"] and not os.path.exists(script):   # never overwrite a written script
+        with open(script, "w", encoding="utf-8") as f:
+            json.dump({"title": "", "lang": args.lang, "lines": []}, f, ensure_ascii=False, indent=2)
+    out({"project": args.dir, "flow": args.flow, "formats": pj["formats"]}, args.json,
+        f"Created {args.dir} for {args.flow}. Next: follow {names[args.flow]['file']}.")
+
+
+def media_kind(path):
+    low = path.lower()
+    if low.endswith(IMAGE_EXT):
+        return "image"
+    if low.endswith(AUDIO_EXT):
+        return "audio"
+    return "video"
+
+
+def free_media_path(project, pj, mid, src):
+    """Where to copy src in media/: its own name, unless another file is already there (another
+    media's, or anything else), then name-2.ext, name-3.ext... Replacing mid's own file is fine."""
+    d = os.path.join(proj.root(project), "media")
+    stem, ext = os.path.splitext(os.path.basename(src))
+    own = pj["media"].get(mid, {}).get("file")
+    own = os.path.abspath(proj.resolve(project, own)) if own else None
+    n, dst = 1, os.path.join(d, stem + ext)
+    while os.path.exists(dst) and os.path.abspath(dst) not in (src, own):
+        n += 1
+        dst = os.path.join(d, f"{stem}-{n}{ext}")
+    return dst
+
+
+def cmd_add_media(args):
+    try:
+        pj = proj.load(args.project)
+    except proj.ProjectError as e:
+        die(str(e))
+    if not os.path.isfile(args.file):
+        die(f"file not found: {args.file}")
+    mid = args.id or re.sub(r"[^\w-]+", "-", os.path.splitext(os.path.basename(args.file))[0]).strip("-")
+    if mid in pj["media"] and not args.replace:
+        die(f"media id {mid!r} already exists (use --id, or --replace)")
+    src = os.path.abspath(args.file)
+    if args.copy:
+        dst = free_media_path(args.project, pj, mid, src)
+        if os.path.abspath(dst) != src:
+            shutil.copy2(src, dst)
+        src = dst
+    entry = {"file": proj.rel(args.project, src), "kind": args.kind or media_kind(src)}
+    if args.track:
+        entry["track"] = args.track
+    words = os.path.splitext(src)[0] + ".words.json"
+    if os.path.isfile(words):
+        entry["words"] = proj.rel(args.project, words)
+    pj["media"][mid] = entry
+    proj.save(args.project, pj)
+    out({"id": mid, **entry}, args.json, f"Added {mid}: {entry['file']} ({entry['kind']})")
+
+
+def probe(path):
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,duration:format=duration",
+                        "-of", "json", path], capture_output=True, text=True)
+    if r.returncode:
+        return None
+    return json.loads(r.stdout)
+
+
+def cmd_status(args):
+    try:
+        pj = proj.load(args.project)
+    except proj.ProjectError as e:
+        die(str(e))
+    root = proj.root(args.project)
+    tl = pj.get("timeline", {})
+    proposals = sorted(os.listdir(os.path.join(root, "proposals"))) if os.path.isdir(os.path.join(root, "proposals")) else []
+    outputs = sorted(os.listdir(os.path.join(root, "out"))) if os.path.isdir(os.path.join(root, "out")) else []
+    script = None
+    if os.path.isfile(os.path.join(root, "script.json")):
+        try:
+            s = proj.load_script(args.project)
+            script = {"lines": len(s["lines"])}
+        except proj.ProjectError as e:
+            script = {"error": str(e)}
+    errs = proj.validate(args.project, pj)
+    data = {"flow": pj["flow"], "lang": pj.get("lang"), "formats": pj["formats"], "state": pj.get("state", {}),
+            "media": sorted(pj.get("media", {})), "timeline": {"video": len(tl.get("video", [])),
+                                                                "audio": len(tl.get("audio", []))},
+            "script": script, "proposals": proposals, "outputs": outputs, "problems": errs,
+            "waiting_for_human": [k for k in pj.get("state", {}) if proj.state_of(pj, k) in ("proposed", "needs-human")]}
+    lines = [f"Flow: {pj['flow']}   language: {pj.get('lang')}   formats: {', '.join(pj['formats'])}"]
+    for k in pj.get("state", {}):
+        v = pj["state"][k]
+        lines.append(f"  {k:<12} {proj.state_of(pj, k)}" + (f"  ({v['note']})" if isinstance(v, dict) else ""))
+    lines.append(f"Media: {', '.join(data['media']) or 'none'}")
+    lines.append(f"Timeline: {data['timeline']['video']} video items, {data['timeline']['audio']} audio items")
+    if script:
+        lines.append(f"Script: {script}")
+    if proposals:
+        lines.append(f"Proposals waiting in proposals/: {', '.join(proposals)}")
+    if outputs:
+        lines.append(f"Outputs: {', '.join(outputs)}")
+    if data["waiting_for_human"]:
+        lines.append(f"Waiting for a human: {', '.join(data['waiting_for_human'])}")
+    if errs:
+        lines.append("Problems:\n  " + "\n  ".join(errs))
+    out(data, args.json, "\n".join(lines))
+
+
+# ---------------------------------------------------------------------------
+# Checks
+# ---------------------------------------------------------------------------
+def loudness(path):
+    r = subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-i", path, "-af", "ebur128=peak=true",
+                        "-f", "null", "-"], capture_output=True, text=True)
+    summary = r.stderr[r.stderr.rfind("Summary:"):]
+    i = re.search(r"I:\s+(-?[\d.]+|-inf) LUFS", summary)
+    tp = re.search(r"Peak:\s+(-?[\d.]+|-inf) dBFS", summary)
+    f = lambda m: None if not m or m.group(1) == "-inf" else float(m.group(1))   # noqa: E731
+    return f(i), f(tp)
+
+
+def srt_cues(path):
+    with open(path, encoding="utf-8") as f:
+        blocks = [b for b in re.split(r"\n\s*\n", f.read().strip()) if b.strip()]
+    cues = []
+    for b in blocks:
+        m = re.search(r"(\d+):(\d+):(\d+)[,.](\d+) --> (\d+):(\d+):(\d+)[,.](\d+)\n(.*)", b, re.S)
+        if not m:
+            cues.append(None)
+            continue
+        g = [int(x) for x in m.groups()[:8]]
+        cues.append((g[0] * 3600 + g[1] * 60 + g[2] + g[3] / 1000, g[4] * 3600 + g[5] * 60 + g[6] + g[7] / 1000,
+                     m.group(9).strip()))
+    return cues
+
+
+def chapter_times(path):
+    times = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            m = re.match(r"\s*(?:(\d+):)?(\d+):(\d\d)\b", line)
+            if m:
+                h, mm, ss = int(m.group(1) or 0), int(m.group(2)), int(m.group(3))
+                times.append(h * 3600 + mm * 60 + ss)
+    return times
+
+
+def cmd_check(args):
+    try:
+        pj = proj.load(args.project)
+    except proj.ProjectError as e:
+        die(str(e))
+    root = proj.root(args.project)
+    errors, warnings, info = [], [], {}
+    errors += proj.validate(args.project, pj)
+    total = None
+    try:
+        import render
+        total = render.plan(args.project, pj)[2] if pj["timeline"].get("video") else None
+    except Exception as e:   # reported as a problem, not a crash
+        errors.append(f"timeline: {e}")
+    renders = pj.get("renders", {})
+    for fmt in pj["formats"]:
+        r = renders.get(fmt)
+        if not r:
+            warnings.append(f"{fmt}: not rendered yet (render.py -P {args.project})")
+            continue
+        f = proj.resolve(args.project, r["file"])
+        if not os.path.isfile(f):
+            errors.append(f"{fmt}: {r['file']} is missing")
+            continue
+        d = probe(f)
+        if not d:
+            errors.append(f"{fmt}: can't read {r['file']}")
+            continue
+        dur = float(d["format"]["duration"])
+        streams = {s["codec_type"]: float(s.get("duration") or dur) for s in d["streams"]}
+        i, tp = loudness(f)
+        info[fmt] = {"file": r["file"], "duration": round(dur, 3), "lufs": i, "peak": tp}
+        if total is not None and abs(dur - total) > 0.1:
+            errors.append(f"{fmt}: {dur:.2f}s long, the timeline is {total:.2f}s")
+        if "audio" not in streams:
+            errors.append(f"{fmt}: no audio track")
+        elif "video" in streams and abs(streams["audio"] - streams["video"]) > 0.1:
+            errors.append(f"{fmt}: audio {streams['audio']:.2f}s vs video {streams['video']:.2f}s (out of sync?)")
+        if i is None:
+            warnings.append(f"{fmt}: silent audio")
+        elif abs(i - (-14)) > 1:
+            errors.append(f"{fmt}: loudness {i:.1f} LUFS, expected -14 (±1)")
+        if tp is not None and tp > -0.5:
+            errors.append(f"{fmt}: peak {tp:.1f} dBFS, expected at most -1")
+    srt = os.path.join(root, "out", "video.srt")
+    if os.path.isfile(srt):
+        cues = srt_cues(srt)
+        last = 0.0
+        for n, c in enumerate(cues, 1):
+            if c is None:
+                errors.append(f"video.srt: cue {n} is malformed")
+                continue
+            s, e, text = c
+            if not text:
+                errors.append(f"video.srt: cue {n} is empty")
+            if e <= s:
+                errors.append(f"video.srt: cue {n} ends before it starts")
+            if s < last - 0.01:
+                warnings.append(f"video.srt: cue {n} overlaps the previous one")
+            if total is not None and e > total + 0.5:
+                errors.append(f"video.srt: cue {n} ends at {e:.1f}s, after the video ({total:.1f}s)")
+            last = e
+        info["srt_cues"] = len(cues)
+    chapters = os.path.join(root, "out", "chapters.txt")
+    if os.path.isfile(chapters):
+        t = chapter_times(chapters)
+        if len(t) < 3 or t[0] != 0:
+            errors.append("chapters.txt: YouTube needs at least 3 chapters, the first at 0:00")
+        if any(b - a < 10 for a, b in zip(t, t[1:])) or (total and t and total - t[-1] < 10):
+            errors.append("chapters.txt: every chapter must be at least 10 s long")
+        if total and t and t[-1] >= total:
+            errors.append("chapters.txt: a chapter starts after the end of the video")
+    report = {"ok": not errors, "errors": errors, "warnings": warnings, "outputs": info}
+    os.makedirs(os.path.join(root, "checks"), exist_ok=True)
+    with open(os.path.join(root, "checks", "report.json"), "w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+    text = ["OK" if not errors else "PROBLEMS"]
+    text += [f"  error:   {e}" for e in errors] + [f"  warning: {w}" for w in warnings]
+    for fmt, v in info.items():
+        if isinstance(v, dict):
+            text.append(f"  {fmt}: {v['duration']}s, {v['lufs']} LUFS, peak {v['peak']} dBFS")
+    out(report, args.json, "\n".join(text))
+    if errors:
+        sys.exit(1)
+
+
+def cmd_backends(args):
+    kinds = [args.kind] if args.kind else None
+    if args.kind and args.kind not in backends.KINDS:
+        die(f"unknown kind {args.kind!r} (known: {', '.join(backends.KINDS)})")
+    data = {"profile": backends.profile(), "chains": {k: backends.chain(k) for k in (kinds or backends.KINDS)},
+            "backends": backends.describe(kinds), "planned": backends.PLANNED if not kinds else {}}
+    lines = [f"Profile: {data['profile']}"]
+    for kind in kinds or backends.KINDS:
+        lines.append(f"\n{kind}  (order: {', '.join(data['chains'][kind])})")
+        for b in [d for d in data["backends"] if d["kind"] == kind]:
+            mark = "ok " if b["usable"] else "-- "
+            caps = ", ".join(k if v is True else f"{k}={v}" for k, v in b["caps"].items() if v)
+            lines.append(f"  {mark}{b['name']:<15} {caps}" + (f"\n       {b['why']}" if b["why"] else ""))
+    if data["planned"]:
+        lines.append("\nPlanned kinds: " + "; ".join(f"{k}: {v}" for k, v in data["planned"].items()))
+    out(data, args.json, "\n".join(lines))
+
+
+def main():
+    p = argparse.ArgumentParser(prog="lky", description="lowkeyoutuber: flows, projects, checks, backends.")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    def add(name, fn, help_):
+        s = sub.add_parser(name, help=help_)
+        s.add_argument("--json", action="store_true", help="machine-readable output on stdout")
+        s.set_defaults(fn=fn)
+        return s
+
+    add("flows", cmd_flows, "list the flows")
+    s = add("new", cmd_new, "create a project folder for a flow")
+    s.add_argument("flow")
+    s.add_argument("dir")
+    s.add_argument("--lang", default=os.environ.get("LKY_LANG") or "es")
+    s.add_argument("--format", action="append", choices=sorted(proj.SIZES), help="repeat for several (default 16:9)")
+    s.add_argument("--input", action="append", metavar="KEY=VALUE")
+    s = add("add-media", cmd_add_media, "register an input file")
+    s.add_argument("-P", "--project", required=True)
+    s.add_argument("file")
+    s.add_argument("--id")
+    s.add_argument("--kind", choices=["video", "audio", "image"])
+    s.add_argument("--track", type=int, default=0, help="audio track with the voice")
+    s.add_argument("--copy", action="store_true", help="copy the file into media/ (default: reference it)")
+    s.add_argument("--replace", action="store_true")
+    s = add("status", cmd_status, "show the project's state")
+    s.add_argument("-P", "--project", required=True)
+    s = add("check", cmd_check, "run the final checks")
+    s.add_argument("-P", "--project", required=True)
+    s = add("backends", cmd_backends, "list the model backends")
+    s.add_argument("--kind")
+    add("skills", cmd_skills, "regenerate .claude/skills from flows/")
+    args = p.parse_args()
+    args.fn(args)
+
+
+if __name__ == "__main__":
+    main()
