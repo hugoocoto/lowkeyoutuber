@@ -138,9 +138,11 @@ def test_http_page_and_api(tmp_path):
     base = f"http://127.0.0.1:{srv.server_address[1]}"
     try:
         assert "Teleprompter" in urllib.request.urlopen(base + "/").read().decode()
-        st = json.load(urllib.request.urlopen(urllib.request.Request(base + "/api/next", b"", method="POST")))
+        h = {"X-Teleprompter-Token": pr.token}   # what the page sends
+        st = json.load(urllib.request.urlopen(urllib.request.Request(base + "/api/next", b"", headers=h, method="POST")))
         assert st["index"] == 1 and st["current"].startswith("Un puntero")
-        st = json.load(urllib.request.urlopen(urllib.request.Request(base + "/api/toggle", b"", method="POST")))
+        st = json.load(urllib.request.urlopen(urllib.request.Request(base + "/api/toggle", b"", headers=h,
+                                                                     method="POST")))
         assert "No OBS" in st["error"]   # without OBS, Space only explains
         assert [m["line"] for m in json.load(open(out))["marks"]] == ["a", "b"]
     finally:

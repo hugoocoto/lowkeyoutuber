@@ -131,7 +131,7 @@ def test_retake_reports_when_obs_never_stops(tmp_path, monkeypatch):
     pr = tp.Prompter(lines(), str(tmp_path / "t.json"), obs)
     pr.act("toggle")
     st = pr.act("retake")
-    assert "still finishing" in st["error"] and not st["recording"]
+    assert "still recording" in st["error"] and not st["recording"]
 
 
 def test_lost_connection_is_an_error_not_a_crash_and_keeps_the_take(tmp_path):
@@ -167,15 +167,22 @@ def test_cross_site_post_is_refused_but_own_page_and_scripts_work(tmp_path):
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{srv.server_address[1]}"
 
-    def post(origin):
+    def post(origin, token=True, host=None):
         h = {"Origin": origin} if origin else {}
+        if token:
+            h["X-Teleprompter-Token"] = pr.token
+        if host:
+            h["Host"] = host
         return json.load(urllib.request.urlopen(urllib.request.Request(base + "/api/next", b"", headers=h, method="POST")))
     try:
-        with pytest.raises(urllib.error.HTTPError) as e:
-            post("https://evil.example")
-        assert e.value.code == 403 and pr.i == 0       # nothing happened
+        for bad in (dict(origin="https://evil.example"), dict(origin=None, token=False),
+                    dict(origin=None, host="evil.example:80")):   # other site, no token, rebinding
+            with pytest.raises(urllib.error.HTTPError) as e:
+                post(**bad)
+            assert e.value.code == 403 and pr.i == 0       # nothing happened
         assert post(base)["index"] == 1                 # the page itself
-        assert post(None)["index"] == 1                 # curl and friends (no Origin: not a browser form)
+        assert post(None)["index"] == 1                 # a script with the token (no Origin: not a browser form)
+        assert "__TOKEN__" not in urllib.request.urlopen(base + "/").read().decode()
     finally:
         srv.shutdown()
 
