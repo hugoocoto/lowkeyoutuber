@@ -56,6 +56,7 @@ is on PATH).
   | | Arch | Debian/Ubuntu | macOS (Homebrew) |
   |---|---|---|---|
   | ffmpeg (required) | `sudo pacman -S ffmpeg` | `sudo apt install ffmpeg` | `brew install ffmpeg` |
+  | Python venv support (required) | included in `python` | `sudo apt install python3-venv` | included in `python` |
   | fonts for thumbnails/captions | `sudo pacman -S ttf-dejavu` | `sudo apt install fonts-dejavu` | `brew install --cask font-dejavu` |
   | Node.js + npm (scenes) | `sudo pacman -S nodejs npm` | `sudo apt install nodejs npm` (needs 22+) | `brew install node` |
   | espeak-ng (Kokoro) | `sudo pacman -S espeak-ng` | `sudo apt install espeak-ng` | `brew install espeak-ng` |

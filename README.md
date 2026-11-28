@@ -73,7 +73,7 @@ System packages (ffmpeg and fonts; the rest only for the features you use, see `
 
 ```
 sudo pacman -S ffmpeg ttf-dejavu                 # Arch (+ nvidia-prime on a hybrid NVIDIA laptop)
-sudo apt install ffmpeg fonts-dejavu             # Debian / Ubuntu
+sudo apt install ffmpeg fonts-dejavu python3-venv   # Debian / Ubuntu
 brew install ffmpeg && brew install --cask font-dejavu   # macOS
 ```
 

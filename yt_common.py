@@ -98,7 +98,7 @@ CONFIG = load_config()
 def default_language():
     """The user's language when nothing explicit was given: config LANGUAGE, else env LKY_LANG,
     else None (unknown: Whisper detects it, TTS backends ask the person to set it)."""
-    return (CONFIG.get("LANGUAGE") or os.environ.get("LKY_LANG") or "").strip() or None
+    return (CONFIG.get("LANGUAGE") or "").strip() or (os.environ.get("LKY_LANG") or "").strip() or None
 
 
 def use_nvidia_gpu():

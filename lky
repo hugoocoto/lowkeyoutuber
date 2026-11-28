@@ -18,7 +18,8 @@ venv_dir() {
   local ver plugin mkt cache plugins
   ver="$(dirname "$HERE/x")"; plugin="$(dirname "$ver")"; mkt="$(dirname "$plugin")"; cache="$(dirname "$mkt")"
   plugins="$(dirname "$cache")"
-  if [[ "$(basename "$cache")" == cache && -d "$plugins/data" ]]; then
+  # no check that data/ exists: it may not yet, and the path must not change once it does
+  if [[ "$(basename "$cache")" == cache && -f "$HERE/.claude-plugin/plugin.json" ]]; then
     echo "$plugins/data/$(basename "$plugin")-$(basename "$mkt")/venv"; return
   fi
   echo "$HOME/.venvs/lowkeyoutuber"
@@ -30,6 +31,11 @@ ensure_venv() {
     echo "lky: creating the toolkit's venv at $VENV" >&2
     mkdir -p "$(dirname "$VENV")"
     python3 -m venv "$VENV"
+  fi
+  # python appears before pip is installed: a failed or interrupted creation is repaired here,
+  # keeping the packages already in it
+  if ! compgen -G "$VENV/lib/python*/site-packages/pip" >/dev/null; then
+    "$VENV/bin/python" -m ensurepip --upgrade >&2
   fi
 }
 

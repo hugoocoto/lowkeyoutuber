@@ -67,16 +67,19 @@ def test_launcher_runs_tools_and_finds_the_plugin_venv(tmp_path):
     # installed as a plugin: cache/<marketplace>/<plugin>/<version>/ -> data/<plugin>-<marketplace>/venv
     ver = tmp_path / "plugins" / "cache" / "mkt" / "lowkeyoutuber" / "1.0"
     ver.mkdir(parents=True)
-    (tmp_path / "plugins" / "data").mkdir()
     import shutil
     shutil.copy2(os.path.join(ROOT, "lky"), ver / "lky")
+    shutil.copytree(os.path.join(ROOT, ".claude-plugin"), ver / ".claude-plugin")
     env = {k: v for k, v in os.environ.items() if k not in ("LKY_VENV", "PYTHON")}
     venv = tmp_path / "plugins" / "data" / "lowkeyoutuber-mkt" / "venv"
-    venv.mkdir(parents=True)
-    (venv / "bin").mkdir()
-    (venv / "bin" / "python").symlink_to(sys.executable)   # an existing venv: nothing is created
+    # no data/ folder yet: still the plugin's venv, created there
     r = subprocess.run([str(ver / "lky"), "venv"], capture_output=True, text=True, env=env)
-    assert r.returncode == 0 and r.stdout.strip() == str(venv)
+    assert r.returncode == 0 and r.stdout.strip() == str(venv), r.stderr
+    # a creation that stopped before pip was installed is repaired on the next run
+    for pip in venv.glob("lib/python*/site-packages/pip*"):   # pip and its dist-info
+        shutil.rmtree(pip)
+    r = subprocess.run([str(ver / "lky"), "venv"], capture_output=True, text=True, env=env)
+    assert r.returncode == 0 and list(venv.glob("lib/python*/site-packages/pip")), r.stderr
     r = subprocess.run([str(ver / "lky"), "venv"], capture_output=True, text=True,
                        env=dict(env, LKY_VENV=str(tmp_path / "mine")))
     assert r.stdout.strip() == str(tmp_path / "mine")   # $LKY_VENV wins (created there)
