@@ -36,6 +36,7 @@ import sys
 import backends
 import project as proj
 from backends.music._styles import load_styles, style_from_prompt
+from backends.music.composer import find_soundfont
 from backends.sfx._cache import probe_duration, slug
 from backends.sfx.cc0 import import_pack
 from yt_common import die, log, need
@@ -102,7 +103,7 @@ def _line_windows(root, pj, script, total):
             f = proj.resolve(root, m.get("file")) if m else None
             d = _probe_dur(f) if (f and os.path.isfile(f)) else max(2.0, len(lid) * 0.3)
             vo_times[lid] = (float(it.get("at") or 0.0), float(it.get("at") or 0.0) + d)
-    if len(vo_times) == len(lines):
+    if all(l["id"] in vo_times for l in lines):
         out = []
         for i, line in enumerate(lines):
             s, e = vo_times[line["id"]]
@@ -122,21 +123,27 @@ def _line_windows(root, pj, script, total):
 
 
 def _capture_events(root, pj):
+    """capture.py events ({"t", "type"}, seconds into the capture) mapped to timeline seconds."""
     events = []
     for mid, m in (pj.get("media") or {}).items():
-        ev_file = m.get("events")
-        if not ev_file:
+        p = proj.resolve(root, m["events"]) if m.get("events") else None
+        if not p or not os.path.isfile(p):
             continue
-        p = proj.resolve(root, ev_file)
-        if os.path.isfile(p):
-            try:
-                with open(p, encoding="utf-8") as f:
-                    data = json.load(f)
-                for ev in data if isinstance(data, list) else data.get("events", []):
-                    if isinstance(ev, dict) and "at" in ev:
-                        events.append({"media": mid, **ev})
-            except (OSError, ValueError):
-                pass
+        try:
+            with open(p, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            continue
+        evs = [e for e in (data if isinstance(data, list) else data.get("events", []))
+               if isinstance(e, dict) and isinstance(e.get("t"), (int, float))]
+        start = 0.0
+        for it in pj.get("timeline", {}).get("video", []):
+            a = float(it.get("in", 0))
+            d = float(it["out"]) - a if "out" in it else float(it.get("dur") or 0)
+            if it.get("src") == mid:
+                events += [{"at": start + e["t"] - a, "action": e.get("type", "")}
+                           for e in evs if a <= e["t"] < a + d]
+            start += d
     return events
 
 
@@ -205,12 +212,12 @@ def _heuristic_plan(root, pj, script, total, args):
             continue
         if any(abs(c["at"] - at) < 0.4 for c in sfx_cues):
             continue
-        act = (ev.get("action") or ev.get("kind") or "").lower()
-        if act in ("click", "key"):
+        act = (ev.get("action") or "").lower()
+        if act == "click":
             sfx_cues.append({"at": at, "query": "soft ui click", "reason": f"capture {act}",
                              "gain_db": -18.0, "max_dur": 0.4})
-        elif act == "run":
-            sfx_cues.append({"at": at, "query": "keyboard tap", "reason": "capture terminal run",
+        elif act in ("key", "press", "type", "run"):
+            sfx_cues.append({"at": at, "query": "keyboard tap", "reason": f"capture {act}",
                              "gain_db": -18.0, "max_dur": 0.5})
     sfx_cues = sorted(sfx_cues, key=lambda c: c["at"])[:12]
 
@@ -269,10 +276,16 @@ def _refine_with_llm(base_plan, pj, script, total):
             out["scale"] = data["scale"].strip()
         if isinstance(data.get("prompt"), str) and data["prompt"].strip():
             out["prompt"] = data["prompt"].strip()
-        if isinstance(data.get("sections"), list) and data["sections"]:
-            out["sections"] = data["sections"]
+        num = (int, float)
+        secs = data.get("sections")
+        if isinstance(secs, list) and secs and all(
+                isinstance(s, dict) and isinstance(s.get("start"), num) and isinstance(s.get("end"), num)
+                and isinstance(s.get("energy", 0.5), num) and isinstance(s.get("mood", ""), str) for s in secs):
+            out["sections"] = secs
         if isinstance(data.get("sfx"), list):
-            out["sfx"] = [c for c in data["sfx"] if isinstance(c, dict) and "at" in c and c.get("query")][:12]
+            out["sfx"] = [c for c in data["sfx"] if isinstance(c, dict) and isinstance(c.get("at"), num)
+                          and c.get("query") and isinstance(c.get("gain_db", 0), num)
+                          and isinstance(c.get("max_dur", 0), (num, type(None)))][:12]
         return out
     except Exception as e:
         log(f"LLM audio planning skipped ({e}), using timeline heuristics.")
@@ -307,18 +320,18 @@ def _recommend_music_mode(plan, total, explicit_backend=None):
     return mode, reason, lib_hits
 
 
-def propose(args):
+def _load(args):
     root = proj.root(args.project)
     try:
         pj = proj.load(args.project)
+        script = proj.load_script(args.project) if os.path.isfile(os.path.join(root, "script.json")) else None
     except proj.ProjectError as e:
         die(str(e))
-    script = None
-    if os.path.isfile(os.path.join(root, "script.json")):
-        try:
-            script = proj.load_script(args.project)
-        except proj.ProjectError as e:
-            die(str(e))
+    return root, pj, script
+
+
+def propose(args):
+    root, pj, script = _load(args)
     total = _timeline_duration(root, pj, script)
     plan = _heuristic_plan(root, pj, script, total, args)
     if not args.no_llm:
@@ -370,24 +383,17 @@ def propose(args):
 
 def _clean_sound_entries(pj):
     """Remove previously placed sound.py items while keeping voices/takes/user audio."""
-    keep_audio = []
-    for it in pj["timeline"].get("audio", []):
-        src = str(it.get("src", ""))
-        if it.get("managed_by") == "sound.py" or src == "bg-music" or src.startswith("sfx:"):
-            continue
-        keep_audio.append(it)
-    pj["timeline"]["audio"] = keep_audio
-    for mid in list(pj.get("media", {})):
-        if mid == "bg-music" or mid.startswith("sfx:"):
-            del pj["media"][mid]
+    tl = pj["timeline"]
+    ours = [it for it in tl.get("audio", []) if it.get("managed_by") == "sound.py"]
+    tl["audio"] = [it for it in tl.get("audio", []) if it.get("managed_by") != "sound.py"]
+    used = {it.get("src") for it in tl["audio"] + tl.get("video", [])}
+    for it in ours:
+        if it.get("src") not in used:
+            pj.get("media", {}).pop(it.get("src"), None)
 
 
 def place(args, proposal=None):
-    root = proj.root(args.project)
-    try:
-        pj = proj.load(args.project)
-    except proj.ProjectError as e:
-        die(str(e))
+    root, pj, script = _load(args)
     prop_path = os.path.join(root, "proposals", "audio.json")
     if proposal is None:
         if not os.path.isfile(prop_path):
@@ -397,7 +403,7 @@ def place(args, proposal=None):
             with open(prop_path, encoding="utf-8") as f:
                 proposal = json.load(f)
 
-    total = _timeline_duration(root, pj)
+    total = _timeline_duration(root, pj, script)
     music_cfg = proposal.get("music") or {}
     mode = args.backend or proposal.get("mode") or "composer"
     if args.style:
@@ -432,6 +438,7 @@ def place(args, proposal=None):
             key_hash = backends.input_hash(
                 "sound-music", total, music_cfg.get("style"), music_cfg.get("bpm"),
                 music_cfg.get("key"), music_cfg.get("scale"), music_cfg.get("sections"),
+                load_styles().get(music_cfg.get("style")), find_soundfont(),
             )
             dst = os.path.join(root, "media", f"music_{key_hash}.wav")
             if args.force or not os.path.isfile(dst):
@@ -510,26 +517,26 @@ def place(args, proposal=None):
 def cmd_generate(args):
     need("ffmpeg")
     comp = backends.load("music", "composer")
-    ok, why = comp.check()
-    if not ok:
-        die(why)
     sections = None
     if args.plan:
         with open(args.plan, encoding="utf-8") as f:
             data = json.load(f)
         sections = data.get("sections") if isinstance(data, dict) else data
-    out_path, meta = comp.compose(
-        args.output,
-        prompt=args.prompt or "",
-        duration=args.dur,
-        style=args.style,
-        bpm=args.bpm,
-        key=args.key,
-        scale=args.scale,
-        sections=sections,
-        seed=args.seed,
-        soundfont=args.soundfont,
-    )
+    try:  # compose() checks fluidsynth and the soundfont itself, honouring --soundfont
+        out_path, meta = comp.compose(
+            args.output,
+            prompt=args.prompt or "",
+            duration=args.dur,
+            style=args.style,
+            bpm=args.bpm,
+            key=args.key,
+            scale=args.scale,
+            sections=sections,
+            seed=args.seed,
+            soundfont=args.soundfont,
+        )
+    except backends.BackendError as e:
+        die(str(e))
     res = {"file": out_path, **meta}
     if args.json:
         json.dump(res, sys.stdout, ensure_ascii=False, indent=2)

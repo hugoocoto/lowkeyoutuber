@@ -82,10 +82,15 @@ class Backend(backends.Base):
             cmd.extend(["-ar", "48000", "-ac", "2"])
             if out_path.lower().endswith(".wav"):
                 cmd.extend(["-c:a", "pcm_s16le"])
-            cmd.append(out_path)
+            base, ext = os.path.splitext(out_path)
+            part = f"{base}.part{ext}"  # a failed run never leaves a file the cache would reuse
+            cmd.append(part)
             fr = subprocess.run(cmd, capture_output=True, text=True)
-            if fr.returncode or not os.path.isfile(out_path):
+            if fr.returncode or not os.path.isfile(part):
+                if os.path.exists(part):
+                    os.remove(part)
                 raise BackendError(f"ffmpeg mastering failed: {fr.stderr.strip()[-400:]}")
+            os.replace(part, out_path)
         meta["soundfont"] = sf
         return out_path, meta
 
@@ -93,7 +98,8 @@ class Backend(backends.Base):
         dur = float(duration or 30.0)
         out = kw.pop("out", None)
         if not out:
-            h = backends.input_hash("composer", prompt, dur, kw, find_soundfont(kw.get("soundfont")))
+            style = load_styles().get(kw.get("style") or style_from_prompt(prompt))
+            h = backends.input_hash("composer", prompt, dur, kw, style, find_soundfont(kw.get("soundfont")))
             out = os.path.join(cache_dir(), f"{h}.wav")
             if os.path.isfile(out):
                 return out

@@ -29,10 +29,13 @@ def _cache_path():
 
 
 def _probe_meta(path):
-    r = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration:format_tags", "-of", "json", path],
-        capture_output=True, text=True,
-    )
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration:format_tags", "-of", "json", path],
+            capture_output=True, text=True,
+        )
+    except OSError:  # no ffprobe: match on file names only
+        return {"duration": 0.0, "tags": ""}
     if r.returncode:
         return {"duration": 0.0, "tags": ""}
     try:

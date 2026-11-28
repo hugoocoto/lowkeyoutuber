@@ -260,6 +260,8 @@ def mix_audio(vids, auds, total, out, tmp):
     def add(file, a, d, at, track, gain, bus, loop=False, seg_d=None, fade_in=0.0, fade_out=0.0):
         nonlocal k
         play_d = max(min(d, total - at), 0.0)
+        if not loop and seg_d is not None:
+            play_d = min(play_d, seg_d)  # 'dur' is a maximum: never read past 'out'
         if play_d <= 0:
             return
         if loop and seg_d and seg_d > 0:

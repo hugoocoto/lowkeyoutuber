@@ -142,15 +142,21 @@ class Backend(Base):
         fn = {"whoosh": _whoosh, "click": _click, "pop": _pop,
               "chime": _chime, "error": _error, "riser": _riser}[kind]
         samples = fn(dur, seed=int(h[:8], 16))
+        if max_dur:  # some kinds have a minimum length; never go past what was asked
+            samples = samples[:int(SR * dur)]
+        part = dst[:-4] + ".part.wav"
         with tempfile.TemporaryDirectory() as tmp:
             raw = os.path.join(tmp, "raw.wav")
             _write_wav(raw, samples)
             r = subprocess.run(
                 ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", raw,
-                 "-af", "aresample=48000,aformat=channel_layouts=stereo", "-c:a", "pcm_s16le", dst],
+                 "-af", "aresample=48000,aformat=channel_layouts=stereo", "-c:a", "pcm_s16le", part],
                 capture_output=True, text=True,
             )
             if r.returncode:
+                if os.path.exists(part):
+                    os.remove(part)
                 raise BackendError(f"ffmpeg failed for synth sfx: {r.stderr.strip()[-200:]}")
-        record_entry(dst, query=prompt, tags=[kind], duration=dur, license_name="CC0", source="synth")
+        os.replace(part, dst)
+        record_entry(dst, query=prompt, tags=[kind], duration=len(samples) / SR, license_name="CC0", source="synth")
         return dst

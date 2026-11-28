@@ -139,3 +139,22 @@ def test_sound_propose_place_and_render(tmp_path, media):
                         capture_output=True, text=True)
     assert rr.returncode == 0, rr.stderr
     assert os.path.isfile(os.path.join(d, "out", "video.mp4"))
+
+
+def test_capture_events_clean_and_voice_ids(tmp_path):
+    sys.path.insert(0, ROOT)
+    import sound
+    (tmp_path / "ev.json").write_text(json.dumps({"events": [
+        {"t": 1.0, "type": "click"}, {"t": 3.5, "type": "run"}, {"t": 9.0, "type": "click"}]}))
+    pj = {"media": {"cap": {"file": "c.mp4", "events": "ev.json"}, "sfx:bell": {"file": "b.wav"},
+                    "sfx:1-x": {"file": "x.wav"}},
+          "timeline": {"video": [{"color": "black", "dur": 2.0}, {"src": "cap", "in": 3.0, "out": 6.0}],
+                       "audio": [{"src": "sfx:bell", "at": 1.0}, {"src": "sfx:1-x", "at": 2.0, "managed_by": "sound.py"}]}}
+    # capture second 3.5 sits 0.5 s into the clip that starts at 2.0; 1.0 and 9.0 are cut out
+    assert sound._capture_events(str(tmp_path), pj) == [{"at": 2.5, "action": "run"}]
+    sound._clean_sound_entries(pj)
+    assert [a["src"] for a in pj["timeline"]["audio"]] == ["sfx:bell"]
+    assert "sfx:bell" in pj["media"] and "sfx:1-x" not in pj["media"]
+    script = {"lines": [{"id": "A", "text": "one two three"}, {"id": "C", "text": "four five six"}]}
+    pj2 = {"media": {}, "timeline": {"audio": [{"src": "vo:A", "at": 0}, {"src": "vo:B", "at": 3}]}}
+    assert [w["id"] for w in sound._line_windows(str(tmp_path), pj2, script, 10.0)] == ["A", "C"]

@@ -7,7 +7,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 
-from backends import Base, BackendError
+from backends import Base, BackendError, input_hash
 from backends.sfx._cache import cache_dir, find_cached, probe_duration, record_entry, slug
 
 AUDIO = (".mp3", ".wav", ".flac", ".ogg", ".m4a", ".opus")
@@ -26,6 +26,8 @@ def import_pack(pack_path, tag=""):
             if rel.startswith(".."):
                 continue
             target = os.path.join(dst_root, os.path.basename(rel))
+            if target in imported:  # ui/click.wav and game/click.wav: keep both
+                target = os.path.join(dst_root, rel.replace(os.sep, "_"))
             with zf.open(member) as src, open(target, "wb") as out:
                 out.write(src.read())
             words_from_name = os.path.splitext(os.path.basename(rel))[0].replace("_", " ").replace("-", " ").split()
@@ -85,7 +87,7 @@ class Backend(Base):
             ext = os.path.splitext(urllib.parse.urlparse(h["url"]).path)[1].lower() or ".ogg"
             if ext not in AUDIO:
                 ext = ".ogg"
-            dst = os.path.join(cache_dir(), f"cc0_{slug(h['title'])}{ext}")
+            dst = os.path.join(cache_dir(), f"cc0_{slug(h['title'])}_{input_hash(h['url'])[:8]}{ext}")
             if not os.path.isfile(dst):
                 req = urllib.request.Request(h["url"], headers={"User-Agent": "lowkeyoutuber/1.0"})
                 try:

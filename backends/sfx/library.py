@@ -45,7 +45,7 @@ class Backend(Base):
             if score == 0:
                 continue
             dur = probe_duration(path) if max_dur is not None else 0.0
-            if max_dur is not None and dur > float(max_dur) + 0.05:
+            if max_dur is not None and (dur <= 0 or dur > float(max_dur) + 0.05):
                 continue
             key = (score, -dur)
             if key > best_score:
