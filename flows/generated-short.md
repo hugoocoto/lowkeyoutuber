@@ -34,6 +34,8 @@ inputs: the topic (required); notes, code or links to base it on; language (defa
    readable, picture matches the line). Fix what fails before the person looks.
 6. **Timeline:** `./tts.py -P work/<name> --place` puts each line's voice over its scene. Turn captions on
    in `project.json`: `"captions": {"burn": true, "style": "word-highlight"}`.
+   - **Music & SFX (optional):** `./sound.py -P work/<name> --propose` drafts `proposals/audio.json`
+     (style, section energy, SFX cues); check with the person or tweak, then `./sound.py -P work/<name> --place`.
 7. **Preview:** `./render.py -P work/<name> --preview --frames auto` and look at the frames.
    - **Check-in:** the person watches `out/preview.mp4`.
 8. **Render:** `./render.py -P work/<name>` → `out/video.mp4` (+ `video_16x9.mp4`) and `out/video.srt`.

@@ -121,3 +121,33 @@ def test_music_ducks_under_the_voice(tmp_path):
 
     before, during = music_rms(0.2, 1.8), music_rms(2.6, 3.8)
     assert during < before - 5
+
+
+def test_sfx_bus_and_loop_fade(tmp_path):
+    import render as rd
+    from conftest import ff
+    ff("-f", "lavfi", "-i", "sine=f=3000:d=2", str(tmp_path / "m.wav"))
+    ff("-f", "lavfi", "-i", "sine=f=200:d=1", str(tmp_path / "sfx.wav"))
+    auds = [
+        {"file": str(tmp_path / "m.wav"), "a": 0, "d": 6.0, "seg_d": 2.0, "at": 0, "duck": True,
+         "bus": "music", "loop": True, "fade_in": 0.5, "fade_out": 0.8, "gain": -12, "track": 0},
+        {"file": str(tmp_path / "sfx.wav"), "a": 0, "d": 1.0, "at": 2.5, "duck": False,
+         "bus": "sfx", "loop": False, "fade_in": 0.0, "fade_out": 0.0, "gain": -3, "track": 0},
+    ]
+    rd.mix_audio([], auds, 6.0, str(tmp_path / "mix.wav"), str(tmp_path))
+
+    def band_rms(a, b, filt):
+        r = subprocess.run(["ffmpeg", "-nostdin", "-ss", str(a), "-to", str(b), "-i", str(tmp_path / "mix.wav"),
+                            "-af", f"{filt},astats=metadata=0", "-f", "null", "-"],
+                           capture_output=True, text=True)
+        return float([x for x in r.stderr.splitlines() if "RMS level dB" in x][-1].split()[-1])
+
+    # Looped music still sounds past 2 s (at 4.2 s), fades at start/end, and isn't ducked by sfx at 2.7 s
+    head = band_rms(0.05, 0.2, "highpass=f=2000,highpass=f=2000")
+    mid = band_rms(4.0, 4.8, "highpass=f=2000,highpass=f=2000")
+    during_sfx = band_rms(2.6, 3.3, "highpass=f=2000,highpass=f=2000")
+    tail = band_rms(5.5, 5.95, "highpass=f=2000,highpass=f=2000")
+    assert mid > -42
+    assert head < mid - 5.0
+    assert abs(during_sfx - mid) < 2.0
+    assert tail < mid - 5.0

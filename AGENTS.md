@@ -26,8 +26,8 @@ It depends on what the person asked for.
 ## Rules
 - **Uploads are private.** Never upload unless asked; the person publishes in YouTube Studio.
 - **No secrets on screen:** API keys, tokens, real emails, customer data. Use demo data.
-- **API keys** come from the environment (`ELEVENLABS_API_KEY`, `GEMINI_API_KEY`, `OBS_WEBSOCKET_PASSWORD`),
-  never the config file or the project folder. Never print them.
+- **API keys** come from the environment (`ELEVENLABS_API_KEY`, `GEMINI_API_KEY`, `FREESOUND_API_KEY`,
+  `OBS_WEBSOCKET_PASSWORD`), never the config file or the project folder. Never print them.
 - **GPU first.** Every encode, transcription or model run uses the NVIDIA GPU when it's there: NVENC
   (`yt_common.video_encoder("auto", q)` from Python; `-c:v h264_nvenc -preset p5 -tune hq -rc vbr -cq 18
   -b:v 0` in shell), CUDA for Whisper/TTS/Ollama. On a hybrid laptop, run GPU work through `prime-run`
@@ -68,6 +68,7 @@ progress on stderr), and skip work that's already done (`-f` to redo).
 | `lky` | new, add-media, status, check, backends, flows, skills |
 | `render.py` | timeline → `out/video*.mp4` + `out/video.srt` (zooms, captions, ducking, -14 LUFS) |
 | `tts.py` | narrates `script.json` with the configured TTS backend; `--place` builds the timeline from it |
+| `sound.py` | video-adaptive FluidSynth music (`--propose`/`--place`, `generate`) and CC0 SFX (`fetch`, `import-pack`) |
 | `align.py` | matches a recording (or teleprompter takes) to `script.json`, keeps the last good take of each line |
 | `scenes.py` | animated scenes per script line (title, text, code, terminal, diagram, image, custom), rendered with HyperFrames |
 | `capture.py` | drives and records an app (web with Playwright, terminal, desktop on a virtual screen), logs every action, proposes zooms |

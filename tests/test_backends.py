@@ -23,7 +23,8 @@ def test_every_kind_has_its_backends():
     assert {"claude_cli", "codex_cli", "opencode_cli", "ollama"} <= set(backends.names("llm"))
     assert {"elevenlabs", "chatterbox", "kokoro", "none"} <= set(backends.names("tts"))
     assert "faster_whisper" in backends.names("transcribe")
-    assert "library" in backends.names("music")
+    assert {"library", "composer"} <= set(backends.names("music"))
+    assert {"library", "freesound", "cc0", "synth"} <= set(backends.names("sfx"))
 
 
 @pytest.mark.parametrize("kind", list(backends.KINDS))
@@ -127,10 +128,68 @@ def test_elevenlabs_needs_key(config, monkeypatch):
 
 
 def test_music_library(config, tmp_path):
-    for f in ("calm-lofi-piano.mp3", "epic-drums.mp3", "notes.txt"):
+    (tmp_path / "chill").mkdir()
+    (tmp_path / "sfx").mkdir()
+    for f in ("calm-lofi-piano.mp3", "chill/rainy-beats.mp3", "sfx/whoosh.wav", "notes.txt"):
         (tmp_path / f).write_bytes(b"x")
+    (tmp_path / "epic-drums.mp3").write_bytes(b"x")
     config["MUSIC_DIR"] = str(tmp_path)
     b = backends.load("music", "library").__class__()
     assert b.check()[0]
     assert b.get("calm piano").endswith("calm-lofi-piano.mp3")
+    assert b.get("rainy").endswith("rainy-beats.mp3")
     assert b.get("drums").endswith("epic-drums.mp3")
+    assert all("whoosh.wav" not in t for t in b.tracks())
+    with pytest.raises(BackendError):
+        b.get("accordion polka", strict=True)
+
+
+def test_sfx_freesound_and_cc0_cached(monkeypatch, tmp_path):
+    from backends.sfx import cc0, freesound
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("FREESOUND_API_KEY", "fs_key")
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    calls = []
+
+    def fake_urlopen(req, timeout=None):
+        calls.append(req.full_url)
+        if "freesound.org/apiv2/search" in req.full_url:
+            return Resp(json.dumps({"results": [{
+                "id": 42, "name": "Soft Whoosh", "tags": ["whoosh", "transition"], "duration": 0.7,
+                "previews": {"preview-hq-mp3": "https://cdn.example/42.mp3"}, "license": "CC0",
+                "username": "alice", "url": "https://freesound.org/s/42/",
+            }]}).encode())
+        if "commons.wikimedia.org" in req.full_url:
+            return Resp(json.dumps({"query": {"pages": {
+                "1": {"title": "File:Click_cc0.wav", "imageinfo": [{
+                    "url": "https://upload.example/click.wav", "mime": "audio/wav",
+                    "extmetadata": {"LicenseShortName": {"value": "CC0"}, "Artist": {"value": "Bob"}},
+                }]},
+                "2": {"title": "File:NonFree.wav", "imageinfo": [{
+                    "url": "https://upload.example/nf.wav", "mime": "audio/wav",
+                    "extmetadata": {"LicenseShortName": {"value": "CC-BY-SA-4.0"}},
+                }]},
+            }}}).encode())
+        return Resp(b"FAKEAUDIO")
+
+    monkeypatch.setattr(freesound.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cc0.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(cc0, "probe_duration", lambda p: 0.4)
+
+    fs = freesound.Backend()
+    p1 = fs.get("soft whoosh", max_dur=1.5)
+    assert p1.endswith(".mp3") and len(calls) == 2
+    # Second identical lookup comes from local cache without network
+    p2 = fs.get("soft whoosh", max_dur=1.5)
+    assert p1 == p2 and len(calls) == 2
+
+    c = cc0.Backend()
+    p3 = c.get("click", max_dur=1.0)
+    assert "click-cc0" in p3 and len(calls) == 4

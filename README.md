@@ -125,6 +125,7 @@ On a project folder (`./lky new work/<name>`, format in `docs/project.md`):
 |---|---|
 | `lky` | Creates projects, shows their state, runs the final checks, lists backends and examples. |
 | `tts.py` | Narrates a script with the configured voice (yours, cloned, or a preset), with word timings. |
+| `sound.py` | Composes adaptive FluidSynth music and fetches CC0 sound effects synced to the project. |
 | `align.py` | Matches a recording to the script and keeps the last good take of each line. |
 | `render.py` | Renders the project's timeline: clips, images, zooms, captions, music under the voice, -14 LUFS. |
 | `scenes.py` | Animated scenes written as code (code typing, diagrams, terminal, titles), rendered with HyperFrames. |
@@ -145,6 +146,8 @@ TTS="elevenlabs,chatterbox,none"           # tried in order; "none" = you record
 VOICE_REF="~/.config/lowkeyoutuber/voice_ref.wav"   # 10-30 s of your clean voice, for cloning
 ELEVEN_VOICE_ID="..."                      # your cloned voice on ElevenLabs
 MUSIC_DIR="~/Music/lowkeyoutuber"          # tracks you're allowed to use
+SFX_DIR="~/Music/lowkeyoutuber/sfx"        # optional folder of local sound effects
+SOUNDFONT="/usr/share/soundfonts/FluidR3_GM.sf2"   # custom .sf2 for FluidSynth music
 ```
 
 | Kind | Backends |
@@ -152,7 +155,8 @@ MUSIC_DIR="~/Music/lowkeyoutuber"          # tracks you're allowed to use
 | LLM | Claude Code, Codex, OpenCode (your own sign-in), Ollama (local) |
 | Transcription | faster-whisper (local) |
 | Voice | Chatterbox Multilingual (local, clones your voice), Qwen3-TTS (local, clones from 3 s, CUDA), Kokoro (local, preset voices, CPU), ElevenLabs (cloud, `ELEVENLABS_API_KEY`), none |
-| Music | a local folder |
+| Music | a local folder (`MUSIC_DIR`), FluidSynth adaptive composer (local, `fluidsynth`) |
+| SFX | local folder/cache, Freesound CC0 (`FREESOUND_API_KEY`), Wikimedia Commons CC0, procedural synth |
 | Scenes | HyperFrames (local, Node.js 22+ and Chrome; installed and pinned on first use) |
 | Judge | Ollama vision model (local), Gemini Decisions (cloud, `GEMINI_API_KEY`) |
 | Search | OpenCLIP + Ollama text embeddings (local), Gemini Embedding 2 (cloud) |

@@ -40,6 +40,8 @@ inputs: the app (URL, binary, or repo plus how to run it) (required); what to sh
    - **Check-in:** the person OKs, edits or drops zooms in `proposals/zooms.json` (of the real project);
      then `./capture.py -P work/<name> --apply`.
 7. **Voice on the timeline:** `./tts.py -P work/<name> --place` (lines start at their `at`).
+   - **Music & SFX (optional):** `./sound.py -P work/<name> --propose` uses the script and `capture.py`
+     action log to propose adaptive music and UI click cues; then `./sound.py -P work/<name> --place`.
 8. **End card (optional):** an image, or a rendered `title` scene (scenes.py), with a `dur` at the END of
    `timeline.video`. Not at the start: that would move the picture away from the voice's times.
 9. **Render** every format: `./render.py -P work/<name>`. Optional: `./judge.py -P work/<name> --lines`.

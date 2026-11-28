@@ -1,0 +1,1 @@
+"""SFX backends: get(prompt, max_dur=None) -> path to a short sound-effect file."""

@@ -209,6 +209,15 @@ def validate(path, p, check_files=True):
             errs.append(f"{where}: needs 'at' (seconds on the timeline)")
         if _num(it.get("in")) and _num(it.get("out")) and it["out"] <= it["in"]:
             errs.append(f"{where}: 'out' must be after 'in'")
+        if it.get("dur") is not None and not (_num(it.get("dur")) and it["dur"] > 0):
+            errs.append(f"{where}: 'dur' must be > 0")
+        for fk in ("fade_in", "fade_out"):
+            if it.get(fk) is not None and not (_num(it.get(fk)) and it[fk] >= 0):
+                errs.append(f"{where}: '{fk}' must be >= 0")
+        if it.get("loop") is not None and not isinstance(it.get("loop"), bool):
+            errs.append(f"{where}: 'loop' must be true or false")
+        if it.get("bus") not in (None, "voice", "music", "sfx"):
+            errs.append(f"{where}: 'bus' must be voice, music or sfx")
     cap = tl.get("captions", {})
     if cap.get("style") not in (None, "word-highlight", "plain"):
         errs.append("timeline.captions.style must be word-highlight or plain")
