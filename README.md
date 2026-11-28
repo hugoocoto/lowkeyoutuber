@@ -157,7 +157,8 @@ MUSIC_DIR="~/Music/lowkeyoutuber"          # tracks you're allowed to use
 | Judge | Ollama vision model (local), Gemini Decisions (cloud, `GEMINI_API_KEY`) |
 | Search | OpenCLIP + Ollama text embeddings (local), Gemini Embedding 2 (cloud) |
 
-Install what you use, in the same venv:
+Install what you use, in the same venv (`source ~/.venvs/subs/bin/activate` first; never system-wide).
+An AI agent working in the repo does this itself, or picks an alternative (see `AGENTS.md`):
 
 ```
 pip install chatterbox-tts            # or qwen-tts, or: kokoro soundfile (+ sudo pacman -S espeak-ng)
@@ -173,5 +174,6 @@ API keys go in the environment, never in the config.
 ## Tests
 
 ```
-python -m pytest tests     # no GPU, network or API keys needed
+~/.venvs/subs/bin/pip install pytest
+~/.venvs/subs/bin/python -m pytest tests     # no GPU, network or API keys needed
 ```

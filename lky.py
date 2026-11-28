@@ -103,7 +103,11 @@ def skill_text(fl):
     return (f"---\nname: {SKILL_NAME}\ndescription: {description}\n---\n{SKILL_MARK}\n\n"
             "Read `AGENTS.md` first if you haven't in this session: it lists the tools, the project folder and "
             "the person's preferences. Combine the tools however the request needs; `./lky backends` shows "
-            "which models work on this machine.\n\n"
+            "which models work on this machine. Python tools run from the shared venv `~/.venvs/subs` (create "
+            "it if missing); when a feature needs a package that isn't installed, install it there or use an "
+            "alternative "
+            "(`AGENTS.md`, \"Python packages and optional features\"), and ask instead if the person prefers "
+            "to be asked.\n\n"
             "Worked examples (read one that is close to the request and adapt it; they are not rules):\n\n"
             f"{examples}\n")
 

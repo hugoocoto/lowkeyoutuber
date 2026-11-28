@@ -15,6 +15,33 @@ videos (`./lky flows`); read one when it's close to the request, adapt it or ign
 - Before saying a video is done: `./lky check -P work/<name>` (when you rendered with `render.py`) and
   look at frames of the result.
 
+## Python packages and optional features
+- **Use the shared venv, `~/.venvs/subs`** (outside the repo, so every checkout and worktree uses the
+  same install). If it doesn't exist, create it: `python -m venv ~/.venvs/subs`. Run the Python tools
+  with it (`~/.venvs/subs/bin/python subtitles.py ...`, or `source ~/.venvs/subs/bin/activate` in the same
+  command) and install packages only there: `~/.venvs/subs/bin/pip install <package>`. Never install
+  system-wide, with `--user` or with `--break-system-packages`.
+- **Many features are optional** and need a package that may not be installed yet. `./lky backends` shows
+  what works and why the rest doesn't; a tool that lacks a package says which one.
+
+  | Feature | Needs | Alternatives without it |
+  |---|---|---|
+  | Transcription (subtitles, captions, align, cuts) | `faster-whisper` (+ `nvidia-cublas-cu12 'nvidia-cudnn-cu12==9.*'` for the GPU) | none: almost every editing tool needs it |
+  | Narration | `chatterbox-tts`, `qwen-tts`, or `kokoro soundfile` (+ system `espeak-ng`) | another TTS backend; ElevenLabs (paid: ask first); TTS `none` (the person records the lines) |
+  | App capture in a browser | `playwright` | terminal/desktop capture; the person records the screen |
+  | Terminal/desktop capture | system `xorg-server-xvfb xdotool xterm` | the person records the screen |
+  | Teleprompter controlling OBS | `websocket-client` | `teleprompter.py` without `--obs` (one long take, then `align.py --media`) |
+  | Animated scenes | system `nodejs npm` (HyperFrames installs itself) | stills or clips as each line's `visual` |
+  | Local search | `open_clip_torch` (+ `ollama pull nomic-embed-text`) | Gemini Embedding (cloud, paid: ask first) |
+  | Automatic checks (`judge.py`) | an Ollama vision model, or Gemini (cloud, paid: ask first) | look at the frames yourself |
+  | Upload | `google-api-python-client google-auth-oauthlib` | the person uploads in YouTube Studio |
+- **When something is missing, you decide what to do:** install the package into `~/.venvs/subs`, or use one of
+  the alternatives, whichever gives the better result for the request at a sensible cost (some installs
+  download GBs: torch-based voices, OpenCLIP). Say what you chose and why. **If the person said they'd
+  rather be asked**, ask instead, with the options (install X, or use Y) and what each costs.
+- Always ask first for system packages (`sudo pacman -S ...`: the person runs them, e.g. `! sudo pacman
+  -S xdotool`) and for anything paid, as above.
+
 ## How much to ask
 It depends on what the person asked for.
 - **"Just do it" / automation:** don't stop to ask. Make sensible choices, say what you chose at the end.
@@ -47,7 +74,7 @@ It depends on what the person asked for.
   it handles captions, zooms, ducking, loudness and several formats, and `lky check` can verify it.
 - **Facecam** (only if the video has one): its box moves between recordings. Check it on a frame
   (`config CAM`, or `--cam x:y:w:h`); `thumbnail.py` and `clips.py` warn and save `cam_check.jpg` when the
-  box looks empty. No facecam: `--cam none`.
+  box looks empty. No facecam: `--cam ""`.
 - **Shorts:** avoid ones that cross a hard cut, and check how each one ends. `clips.py --propose`, then
   `--pick 1,3` renders chosen ones without asking the LLM again.
 - **Sync:** check it by decoding the audio (`ffmpeg -i x.mkv -map 0:a a.wav`) and comparing with frames;
@@ -93,7 +120,8 @@ the same kind; `tests/test_backends.py` runs the contract tests against every ba
 
 ## Changing the repo
 - After editing a flow or this tool list: `./lky skills` (regenerates `.claude/skills/`), then
-  `python -m pytest tests`. Tests use fake backends: never point them at a paid one.
+  `~/.venvs/subs/bin/python -m pytest tests` (`~/.venvs/subs/bin/pip install pytest` once). Tests use
+  fake backends: never point them at a paid one.
 - Prefer adding a tool that does one thing, with `-h`, `--json` and files in/files out, over a script that
   chains others.
 - New lessons from a real video go in the Recommendations above.
