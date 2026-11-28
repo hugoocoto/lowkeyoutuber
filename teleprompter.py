@@ -34,6 +34,7 @@ import base64
 import hashlib
 import json
 import os
+import secrets
 import sys
 import threading
 import time
@@ -70,7 +71,9 @@ function lost(e){   // the answer never came: the recording state is unknown unt
     +'any key retries.';
   setTimeout(()=>call('state'),1500);
 }
-async function send(a){const r=await fetch('/api/'+a,{method:a==='state'?'GET':'POST'});const s=await r.json();show(s);}
+const TOKEN='__TOKEN__';   // this run's token: only this page can act
+async function send(a){const r=await fetch('/api/'+a,a==='state'?{}:{method:'POST',headers:{'X-Teleprompter-Token':TOKEN}});
+  const s=await r.json();show(s);}
 function show(s){
   document.getElementById('cur').textContent=s.done?'Done. You can close this page.':s.current||'';
   document.getElementById('next').textContent=s.next||'';
@@ -113,16 +116,25 @@ class OBS:
     """Minimal obs-websocket v5 client: Hello -> Identify (with auth) -> requests."""
 
     def __init__(self, url, password=None, timeout=10):
-        if password and url.startswith("ws://") and not is_loopback(url):
-            # the auth proof would cross the network unencrypted; on this machine it never leaves it
-            raise OBSError(f"refusing to send the OBS password unencrypted to {url}: use wss://, "
-                           "or run OBS on this machine (localhost)")
+        from urllib.parse import urlparse
+        scheme = urlparse(url).scheme.lower()
+        if scheme not in ("ws", "wss"):
+            raise OBSError(f"not a websocket address: {url} (use ws://host:port or wss://host:port)")
+        if password and scheme == "ws":
+            # the auth proof must never cross the network unencrypted: on this machine it never leaves it
+            if not is_loopback(url):
+                raise OBSError(f"refusing to send the OBS password unencrypted to {url}: use wss://, "
+                               "or run OBS on this machine (localhost)")
+            if os.environ.get("http_proxy") or os.environ.get("HTTP_PROXY"):
+                # websocket-client sends ws:// through http_proxy, even to localhost
+                raise OBSError("http_proxy is set: the OBS password would go through the proxy. "
+                               "Unset http_proxy/HTTP_PROXY for this command, or use wss://")
         try:
             import websocket
         except ImportError:
             raise OBSError("websocket-client is not installed: pip install websocket-client")
-        try:
-            self.ws = websocket.create_connection(url, timeout=timeout)
+        try:   # redirect_limit=0: never send the login to a host we weren't pointed at
+            self.ws = websocket.create_connection(url, timeout=timeout, redirect_limit=0)
         except (OSError, websocket.WebSocketException) as e:
             raise OBSError(f"can't connect to OBS at {url} ({e}). In OBS: Tools > WebSocket Server Settings")
         hello = json.loads(self.ws.recv())
@@ -169,20 +181,33 @@ class OBS:
             pass
 
 
+def load_takes(path):
+    """(takes, marks) an earlier OBS session saved; none if there's no file. A file we can't read
+    is an error, never silently replaced: it holds the takes align.py --from-takes needs."""
+    if not os.path.isfile(path):
+        return [], []
+    try:
+        with open(path, encoding="utf-8") as f:
+            old = json.load(f)
+        if old.get("mode") != "obs":
+            return [], []
+        takes, marks = old.get("takes", []), old.get("marks", [])
+        if not isinstance(takes, list) or not isinstance(marks, list):
+            raise ValueError("takes/marks are not lists")
+    except (OSError, ValueError, AttributeError) as e:
+        raise OBSError(f"can't read the earlier takes in {path} ({e}): fix or move the file first")
+    return takes, marks
+
+
 class Prompter:
     def __init__(self, lines, out_path, obs=None):
         self.lines, self.out_path, self.obs = lines, out_path, obs
         self.i, self.recording, self.take_start, self.done, self.error = 0, False, None, False, ""
         self.t0 = time.monotonic()
+        self.token = secrets.token_urlsafe(16)   # the page sends it with every POST: no cross-site clicks
         self.data = {"mode": "obs" if obs else "marks", "takes": [], "marks": []}
         if obs:   # reopened to record the missing lines: keep the takes already recorded
-            try:
-                with open(out_path, encoding="utf-8") as f:
-                    old = json.load(f)
-                if old.get("mode") == "obs":
-                    self.data["takes"], self.data["marks"] = old.get("takes", []), old.get("marks", [])
-            except (OSError, ValueError, AttributeError):
-                pass
+            self.data["takes"], self.data["marks"] = load_takes(out_path)
         self.data["marks"].append({"line": lines[0]["id"], "t": 0.0})
         self.lock = threading.Lock()   # nothing is written until the first action: a failed start changes nothing
 
@@ -201,6 +226,7 @@ class Prompter:
 
     def _start(self):
         if self.obs:
+            self._wait_idle()   # OBS may be recording something we didn't start: never take it over
             self.obs.request("StartRecord")
         self.recording, self.take_start = True, time.monotonic()
 
@@ -231,7 +257,8 @@ class Prompter:
         end = time.monotonic() + IDLE_WAIT
         while self.obs.request("GetRecordStatus").get("outputActive"):
             if time.monotonic() > end:
-                raise OBSError("OBS is still finishing the previous take: press R again in a moment")
+                raise OBSError("OBS is still recording (the previous take, or a recording started in OBS): "
+                               "wait a moment or stop it in OBS, then try again")
             time.sleep(0.1)
 
     def act(self, action):
@@ -290,9 +317,15 @@ def make_server(prompter, port):
             self.end_headers()
             self.wfile.write(data)
 
+        def _host_ok(self):   # a DNS-rebinding page would reach us under another name
+            p = self.server.server_address[1]
+            return self.headers.get("Host", "") in (f"127.0.0.1:{p}", f"localhost:{p}")
+
         def do_GET(self):
             if self.path in ("/", "/index.html"):
-                self._send(200, PAGE, "text/html; charset=utf-8")
+                if not self._host_ok():
+                    return self._send(403, "{}", "application/json")
+                self._send(200, PAGE.replace("__TOKEN__", prompter.token), "text/html; charset=utf-8")
             elif self.path == "/api/state":
                 self._send(200, json.dumps(prompter.act("state")), "application/json")
             else:
@@ -302,7 +335,10 @@ def make_server(prompter, port):
             # a form on another site can POST here without a preflight: only our own page may act
             origin = self.headers.get("Origin")
             port = self.server.server_address[1]
-            if origin is not None and origin not in (f"http://127.0.0.1:{port}", f"http://localhost:{port}"):
+            token_ok = secrets.compare_digest(self.headers.get("X-Teleprompter-Token", "").encode(),
+                                              prompter.token.encode())
+            if (not token_ok or not self._host_ok()
+                    or origin is not None and origin not in (f"http://127.0.0.1:{port}", f"http://localhost:{port}")):
                 self._send(403, "{}", "application/json")
             elif self.path.startswith("/api/"):
                 self._send(200, json.dumps(prompter.act(self.path[5:])), "application/json")
@@ -341,7 +377,12 @@ def main():
         log(f"Connected to OBS at {url}.")
     # the OBS takes are what align.py --from-takes reads: a marks-only run must never overwrite them
     out = os.path.join(proj.root(args.project), "proposals", "takes-recorded.json" if obs else "marks.json")
-    prompter = Prompter(lines, out, obs)
+    try:
+        prompter = Prompter(lines, out, obs)
+    except OBSError as e:   # an unreadable takes file: stop before anything is written
+        if obs:
+            obs.close()
+        die(str(e))
     srv = make_server(prompter, args.port)
     url = f"http://127.0.0.1:{args.port}/"
     log(f"Teleprompter: {url}  (full screen with F11; Q in the page to finish)")
