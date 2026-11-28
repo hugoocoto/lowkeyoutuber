@@ -26,7 +26,7 @@ source ~/.venvs/subs/bin/activate                     # see Install
 mkdir -p out
 ./process-voice.sh -t 1 -o out/video.mp4 rec.mkv      # clean voice on track 1, -14 LUFS
 python subtitles.py --audio-from rec.mkv -t 1 out/video.mp4 > out/video.srt
-python meta.py -o out out/video.mp4                   # chapters, titles, description, tags
+python meta.py -o out out/video.mp4                   # chapters, titles, description, tags (overwrites them)
 python thumbnail.py -o out out/video.mp4              # thumbnail designs
 python clips.py -o out/shorts out/video.mp4           # vertical Shorts
 python upload.py out/                                  # upload to YouTube as private
@@ -44,7 +44,8 @@ python upload.py out/                                  # upload to YouTube as pr
 | `thumbnail.jpg` | the thumbnail (optional); other designs are in `thumbs/` |
 | `shorts/` | vertical clips, uploaded with `--shorts` |
 
-Edit any of them by hand. Most tools skip work that's already done; delete a file to make it again.
+Edit any of them by hand. Rerunning `meta.py` or `thumbnail.py` overwrites these files, so once you have
+edited them, resume from the next step instead. Tools that cache (transcripts, TTS) skip work already done.
 
 ## Install (Arch Linux)
 

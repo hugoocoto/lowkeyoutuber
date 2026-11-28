@@ -3,7 +3,9 @@
 The tools that work on a timeline share a project folder made by `./lky new <dir>`. Agents edit
 `project.json` and `script.json`, and `render.py` turns them into video. Tools that work on plain
 files (`cut.py`, `subtitles.py`, `meta.py`, `thumbnail.py`, `clips.py`, `upload.py`) don't need one;
-point their `-o` at the project's `out/` to keep everything together.
+keep their results in the project's `out/`, each in its own way: `meta.py -o out`, `thumbnail.py -o out`
+and `clips.py -o out/shorts` take a folder; `cut.py -o out/cut.mkv` takes a file; `subtitles.py` prints
+to stdout (`> out/video.srt`); `upload.py out/` takes the folder as an argument.
 
 ```
 myproject/

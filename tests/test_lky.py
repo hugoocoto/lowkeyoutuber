@@ -89,3 +89,10 @@ def test_backends_listing():
     data = json.loads(run("backends", "--json").stdout)
     assert set(data["chains"]) == set(backends.KINDS)
     assert any(b["name"] == "elevenlabs" for b in data["backends"])
+
+
+def test_new_old_form_accepts_options_between_flow_and_dir(tmp_path):
+    d = tmp_path / "demo"
+    r = run("new", "voice-over", "--lang", "en", str(d))
+    assert (d / "project.json").is_file(), r.stdout
+    assert run("new", "voice-over", "--bogus", str(tmp_path / "z"), ok=False).returncode != 0

@@ -435,7 +435,11 @@ def main():
     s = add("backends", cmd_backends, "list the model backends")
     s.add_argument("--kind")
     add("skills", cmd_skills, "regenerate .claude/skills/")
-    args = p.parse_args()
+    args, extra = p.parse_known_args()
+    if extra:   # old form with options in the middle: lky new FLOW --lang en DIR
+        if args.cmd != "new" or any(e.startswith("-") for e in extra):
+            p.error("unrecognized arguments: " + " ".join(extra))
+        args.where += extra
     args.fn(args)
 
 

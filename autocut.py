@@ -28,7 +28,7 @@ CAREFUL WITH SCREENCASTS
     Pauses in a screencast often have something happening on screen (typing,
     a program running, scrolling docs) even when nobody speaks. Cutting them
     loses that. Before using this on a screen recording, look at the pauses
-    (--dry-run lists them) or ask the person; cut.py removes only the parts
+    (--dry-run lists the kept spans; the gaps between them are the cuts) or ask the person; cut.py removes only the parts
     you list, which is safer for those.
 
 THEN
@@ -194,6 +194,8 @@ def main():
         log(line)
 
     if args.dry_run:
+        for line in report[3 + (len(dropped) + 2 if dropped else 0):]:   # kept spans: the gaps are the pauses
+            log(line)
         return
     out = args.out or os.path.splitext(args.video)[0] + "_cut.mkv"
     if os.path.abspath(out) == os.path.abspath(args.video):

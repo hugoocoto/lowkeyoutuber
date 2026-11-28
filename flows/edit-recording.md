@@ -49,11 +49,13 @@ tools render.
    - Audio: when anything was added on the timeline (zooms, older footage), `render.py` already made
      `out/video.mp4` and normalized it (-14 LUFS). Only when nothing was added:
      `./process-voice.sh -t <track> [-m <music track>] -o work/<name>/out/video.mp4 <cut.mkv>`.
-   - Subtitles: `render.py` writes `out/video.srt` when the media has a transcript. Otherwise
+   - Subtitles: `render.py` writes `out/video.srt` when the media has a transcript, but only for
+     sources that have one: if an older clip was indexed without a transcript, its speech is missing, so
+     transcribe the rendered `out/video.mp4` instead. Otherwise
      `python subtitles.py --audio-from <cut.mkv> -t <track> work/<name>/out/video.mp4 > work/<name>/out/video.srt`
      (transcribing the raw audio does better than the cleaned one).
    - Chapters, titles, description, tags: `python meta.py -o work/<name>/out work/<name>/out/video.mp4`.
-   - Thumbnails: `python thumbnail.py -o work/<name>/out work/<name>/out/video.mp4` (`--cam none` when
+   - Thumbnails: `python thumbnail.py -o work/<name>/out work/<name>/out/video.mp4` (`--cam ""` when
      there is no facecam).
 7. **Review with the person:** `titles.txt` (first line is uploaded), `description.txt`, `video.srt`
    (names and jargon; add recurring fixes to `~/.config/lowkeyoutuber/fixes.txt`), `thumbnail.jpg`.

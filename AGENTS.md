@@ -56,7 +56,8 @@ It depends on what the person asked for.
   the person does with `! python upload.py ...`; Google expires the token after 7 days in Testing. One long
   video plus 3 Shorts uses most of a day's quota. Don't run `pkill -f upload.py; python upload.py ...` in
   one command: `pkill -f` kills the shell running that line.
-- Code shown on screen should compile; `scenes.py` compiles and runs it for real, so its output is real.
+- Code shown on screen should compile; `scenes.py` compiles and runs it for real, so its output is real. Run only
+  what the person approved in the script, in a demo folder, never anything destructive.
 
 ## Tools
 Every tool explains itself with `-h`. Project tools take `-P <project>` and `--json` (results on stdout,
