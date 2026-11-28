@@ -329,10 +329,15 @@ def caption_groups(words, per_group, max_chars):
 
 
 def build_ass(words, W, H, style, highlight="FFD700"):
-    vertical = H > W
-    fs = round(0.088 * W) if vertical else round(0.055 * H)
-    margin = round(0.17 * H) if vertical else round(0.07 * H)
-    per, chars = (3, 24) if vertical else (7, 42)
+    vertical = H > W * 1.5   # 9:16
+    square = not vertical and H >= W * 0.95   # 1:1, 4:5 (X, LinkedIn, Instagram feeds)
+    if vertical:
+        fs, margin, (per, chars) = round(0.088 * W), round(0.17 * H), (3, 24)
+    elif square:   # narrower than 16:9: fewer, bigger words per caption, like vertical
+        fs, margin, (per, chars) = round(0.07 * W), round(0.12 * H), (4, 26)
+    else:
+        fs, margin, (per, chars) = round(0.055 * H), round(0.07 * H), (7, 42)
+    vertical = vertical or square   # upper case, like Shorts
     font = CONFIG.get("CAPTION_FONT") or "DejaVu Sans"
     hl = "&H00{2}{1}{0}&".format(highlight[0:2], highlight[2:4], highlight[4:6])
     head = f"""[Script Info]

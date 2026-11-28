@@ -1,0 +1,8 @@
+{
+  "name": "lowkeyoutuber",
+  "description": "Make and edit YouTube videos with local tools: cut recordings, Shorts, narration (TTS), animated scenes, app captures, teleprompter takes with OBS, subtitles, titles, thumbnails, private uploads.",
+  "author": { "name": "Hugo Coto" },
+  "homepage": "https://github.com/hugoocoto/lowkeyoutuber",
+  "repository": "https://github.com/hugoocoto/lowkeyoutuber",
+  "keywords": ["youtube", "video", "ffmpeg", "whisper", "tts", "shorts"]
+}

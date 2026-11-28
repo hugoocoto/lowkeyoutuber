@@ -13,7 +13,7 @@ import importlib.util
 
 from backends import Base, BackendError
 from backends.tts._common import cuda_device, voice_ref, write_wav
-from yt_common import CONFIG, LANG_NAMES, free_ollama_vram
+from yt_common import CONFIG, LANG_NAMES, default_language, free_ollama_vram
 
 
 class Backend(Base):
@@ -46,10 +46,13 @@ class Backend(Base):
         return self._tts
 
     def speak(self, text, out_base, lang=None, context=None, draft=False):
+        lang = lang or default_language()
+        if not lang:
+            raise BackendError('qwen3-tts needs the language: set the language: lky new --lang xx, or script.json "lang"')
         ref_text = CONFIG.get("VOICE_REF_TEXT") or None
         try:
             wavs, sr = self._load().generate_voice_clone(
-                text=text, language=LANG_NAMES.get(lang or "es", "Spanish"), ref_audio=voice_ref(),
+                text=text, language=LANG_NAMES.get(lang, lang), ref_audio=voice_ref(),
                 ref_text=ref_text, x_vector_only_mode=ref_text is None)
         except (RuntimeError, ValueError, OSError, TypeError) as e:
             raise BackendError(f"qwen3-tts failed: {e}")

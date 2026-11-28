@@ -9,11 +9,9 @@ to stdout; progress and messages go to stderr, so redirecting is safe.
 The transcript is cached in <video>.words.json and shared with clips.py,
 meta.py and autocut.py, so Whisper only runs once per video.
 
-SETUP (Arch Linux)
-    sudo pacman -S ffmpeg
-    python -m venv ~/.venvs/subs
-    source ~/.venvs/subs/bin/activate
-    pip install faster-whisper
+SETUP
+    ffmpeg from your system (pacman / apt / brew install ffmpeg)
+    lky pip install faster-whisper      # into the toolkit's venv (README: Install)
 
 USAGE
     subtitles.py video.mp4 > video.srt

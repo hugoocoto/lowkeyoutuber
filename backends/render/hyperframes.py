@@ -51,7 +51,7 @@ class Backend(Base):
 
     def check(self):
         if not shutil.which("node") or not shutil.which("npm"):
-            return False, "Node.js is not installed (sudo pacman -S nodejs npm)"
+            return False, "Node.js 22+ is not installed (pacman/apt: nodejs npm; brew: node)"
         if node_major() < 22:
             return False, "HyperFrames needs Node.js 22 or newer"
         if not os.path.isfile(self.bin):
