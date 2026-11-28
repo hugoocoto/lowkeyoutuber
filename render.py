@@ -20,6 +20,8 @@ OUTPUT (in out/)
     video.mp4         the first format in project.json ("16:9" usually)
     video_9x16.mp4    the other formats, one file each
     video.srt         subtitles from the timeline's words
+    video*.words.json those words, as the transcript cache of each video: meta.py, clips.py and
+                      thumbnail.py use the script's exact words instead of running Whisper
     Rendering is skipped when the timeline and its media haven't changed (-f to force).
 
 USAGE
@@ -40,7 +42,7 @@ import tempfile
 
 import backends
 import project as proj
-from yt_common import CONFIG, SENTENCE_END, die, log, need, video_encoder
+from yt_common import CONFIG, SENTENCE_END, WHISPER_MODEL, die, log, need, save_transcript, video_encoder
 
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 RAMP = 0.45          # zoom in/out time, seconds
@@ -378,7 +380,16 @@ def caption_groups(words, per_group, max_chars):
     return groups
 
 
-def build_ass(words, W, H, style, highlight="FFD700"):
+def ass_colour(rgb):
+    """RRGGBB -> ASS &H00BBGGRR."""
+    rgb = rgb.lstrip("#")
+    return "&H00{2}{1}{0}".format(rgb[0:2], rgb[2:4], rgb[4:6])
+
+
+def build_ass(words, W, H, style, highlight="FFD700", outline="000000", color="FFFFFF", box=None):
+    """Burned captions. The first line stays put: each caption hangs from a fixed top edge (where a
+    one-line caption always sat), so a caption that needs a second line grows downwards instead of
+    pushing its first line up. box = RRGGBB draws an opaque box behind the text instead of an outline."""
     vertical = H > W * 1.5   # 9:16
     square = not vertical and H >= W * 0.95   # 1:1, 4:5 (X, LinkedIn, Instagram feeds)
     if vertical:
@@ -389,7 +400,12 @@ def build_ass(words, W, H, style, highlight="FFD700"):
         fs, margin, (per, chars) = round(0.055 * H), round(0.07 * H), (7, 42)
     vertical = vertical or square   # upper case, like Shorts
     font = CONFIG.get("CAPTION_FONT") or "DejaVu Sans"
-    hl = "&H00{2}{1}{0}&".format(highlight[0:2], highlight[2:4], highlight[4:6])
+    hl = ass_colour(highlight) + "&"
+    if box:   # BorderStyle 3: the outline colour fills a box around each line; Outline = the box's padding
+        border, edge, thick, shadow = 3, ass_colour(box), max(4, round(fs * 0.22)), 0
+    else:
+        border, edge, thick, shadow = 1, ass_colour(outline), max(2, fs // 12), 3
+    top = H - margin - round(fs * 1.2) - (thick if box else 0)   # top edge of a one-line caption
     head = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {W}
@@ -399,7 +415,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font},{fs},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,{max(2, fs // 12)},3,2,60,60,{margin},1
+Style: Default,{font},{fs},{ass_colour(color)},{ass_colour(color)},{edge},&H64000000,-1,0,0,0,100,100,0,0,{border},{thick},{shadow},8,60,60,{top},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -479,8 +495,8 @@ def render_format(path, pj, fmt, W, H, vids, auds, total, words, args, out):
         graph.append("".join(f"[v{k}]" for k in range(len(vids))) + f"concat=n={len(vids)}:v=1:a=0[vcat]")
         if cap.get("burn") and words:
             with open(os.path.join(tmp, "caps.ass"), "w", encoding="utf-8") as f:
-                f.write(build_ass(words, W, H, cap.get("style") or "word-highlight",
-                                  (cap.get("highlight") or "FFD700").lstrip("#")))
+                f.write(build_ass(words, W, H, cap.get("style") or "word-highlight", cap.get("highlight") or "FFD700",
+                                  cap.get("outline") or "000000", cap.get("color") or "FFFFFF", cap.get("box")))
             graph.append("[vcat]ass=caps.ass[vout]")
         else:
             graph.append("[vcat]null[vout]")
@@ -542,6 +558,17 @@ def save_frames(out, spec, total, frames_dir, tag):
         run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", out, "-frames:v", "1", "-q:v", "3", f])
         saved.append(f)
     return saved
+
+
+def save_words(video, words, lang):
+    """The timeline's words as the video's transcript cache (<video>.words.json, the one subtitles.py
+    writes), so the other tools don't transcribe what is already known. It is keyed like a default
+    Whisper run (track 0, default model, the config's JARGON prompt); --retranscribe still redoes it."""
+    st = os.stat(video)
+    save_transcript({"language": lang, "duration": round(max(w["e"] for w in words), 3),
+                     "src": {"size": st.st_size, "mtime": int(st.st_mtime), "track": 0, "model": WHISPER_MODEL,
+                             "prompt": CONFIG.get("JARGON") or None, "from": "render.py: the timeline's words"},
+                     "words": [{"w": w["w"], "s": w["s"], "e": w["e"]} for w in words]}, video)
 
 
 def main():
@@ -615,6 +642,8 @@ def main():
                                 "loudness_before": measured}
             summary["outputs"].append(proj.rel(args.project, out))
             log(f"  -> {proj.rel(args.project, out)}")
+        if words and not args.preview:
+            save_words(out, words, pj.get("lang"))
         if args.frames:
             summary["frames"] += [proj.rel(args.project, f) for f in
                                   save_frames(out, args.frames, total, os.path.join(root, "checks", "frames"),

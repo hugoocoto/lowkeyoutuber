@@ -46,6 +46,7 @@ is on PATH).
   | Automatic checks (`judge.py`) | an Ollama vision model, or Gemini (cloud, paid: ask first) | look at the frames yourself |
   | Upload | `google-api-python-client google-auth-oauthlib` | the person uploads in YouTube Studio |
   | Composed music (`sound.py`) | system `fluidsynth` and a `.sf2` soundfont | tracks in `MUSIC_DIR`; no music |
+  | Phone frames (`frame.py`) | `pillow` | the capture as it is (`fit` pads or blurs the sides) |
 - **When something is missing, you decide what to do:** install the package (`lky pip install ...`), or
   use one of the alternatives, whichever gives the better result for the request at a sensible cost
   (some installs download GBs: torch-based voices, OpenCLIP). Say what you chose and why. **If the person
@@ -110,6 +111,12 @@ It depends on what the person asked for.
   one command: `pkill -f` kills the shell running that line.
 - Code shown on screen should compile; `scenes.py` compiles and runs it for real, so its output is real. Run only
   what the person approved in the script, in a demo folder, never anything destructive.
+- **Signed or expiring codes on screen** (a QR that changes every 30 s, a one-time code): a pre-made image
+  expires. Fetch the code from the app's API right before the capture that shows or scans it (for a scanner,
+  `capture.py --fake-camera`), at the start of a fresh period, and keep the actions before it short.
+- **Captions:** burned captions hang from a fixed line, so one that wraps grows downwards and the first line
+  never jumps. On a coloured or busy background, a `box` (`"color": "1C1F24", "box": "FFFFFF"`) reads better
+  than an outline. If `lky check` says the caption font isn't installed, install it (or set `CAPTION_FONT`).
 
 ## Tools
 Every tool explains itself with `-h`. Project tools take `-P <project>` and `--json` (results on stdout,
@@ -123,7 +130,8 @@ progress on stderr), and skip work that's already done (`-f` to redo).
 | `sound.py` | video-adaptive FluidSynth music (`--propose`/`--place`, `generate`) and CC0 SFX (`fetch`, `import-pack`) |
 | `align.py` | matches a recording (or teleprompter takes) to `script.json`, keeps the last good take of each line |
 | `scenes.py` | animated scenes per script line (title, text, code, terminal, diagram, image, custom), rendered with HyperFrames |
-| `capture.py` | drives and records an app (web with Playwright, terminal, desktop on a virtual screen), logs every action, proposes zooms |
+| `capture.py` | drives and records an app (web with Playwright, terminal, desktop on a virtual screen), logs every action, proposes zooms; `--fake-camera` for camera apps |
+| `frame.py` | phone captures in a phone frame on a background, per format; two side by side in sync |
 | `teleprompter.py` | prompter page for the person; with `--obs` one OBS recording per take |
 | `judge.py` | automatic checks with a multimodal model: scenes, lines vs picture, Shorts proposals |
 | `search.py` | finds moments in past recordings by description (embeddings) |

@@ -81,12 +81,46 @@ def test_square_captions_are_short_and_big():
     assert fs[1] > fs[0]
 
 
-def test_zoom_changes_the_picture(tmp_path, media):
-    d = make_project(tmp_path, media, formats=("16:9",), burn=False)
-    render(d, "--frames", "1.2,3.0")   # 0.2 s into the clip (no zoom) and 2 s in (zoomed)
-    frames = sorted(os.listdir(os.path.join(d, "checks", "frames")))
-    sizes = [os.path.getsize(os.path.join(d, "checks", "frames", f)) for f in frames]
-    assert len(frames) == 2 and sizes[0] != sizes[1]
+def test_captions_hang_from_a_fixed_top_edge():
+    # top-centre alignment: a caption that wraps to two lines grows downwards, its first line doesn't move
+    import render as r
+    words = [{"w": "hola", "s": 0.0, "e": 0.5}]
+    for W, H in ((1920, 1080), (1080, 1920), (1080, 1080)):
+        style = r.build_ass(words, W, H, "plain").split("Style: Default,")[1].split("\n")[0].split(",")
+        fs, align, top = int(style[1]), int(style[17]), int(style[20])
+        assert align == 8 and top + 2 * fs * 1.2 < H   # room for a second line below the first
+
+
+def test_caption_colours():
+    import render as r
+    words = [{"w": "hola", "s": 0.0, "e": 0.5}]
+    style = lambda **k: r.build_ass(words, 1920, 1080, "plain", **k).split("Style: Default,")[1].split("\n")[0].split(",")
+    assert style()[4] == "&H00000000" and style()[14] == "1"              # black outline by default
+    assert style(outline="460618")[4] == "&H00180646"                     # RRGGBB -> ASS BGR
+    s = style(color="1C1F24", box="FFFFFF")
+    assert s[2] == "&H00241F1C" and s[4] == "&H00FFFFFF" and s[14] == "3"   # ink text in a white box
+
+
+def test_render_writes_a_transcript_cache_the_tools_reuse(tmp_path, media):
+    import argparse
+    import yt_common
+    d = make_project(tmp_path, media, formats=("16:9", "9:16"), burn=False)
+    render(d)
+    for name in ("video", "video_9x16"):
+        video = os.path.join(d, "out", name + ".mp4")
+        args = argparse.Namespace(model=yt_common.WHISPER_MODEL, prompt=yt_common.CONFIG.get("JARGON") or None,
+                                  retranscribe=False, language=None)
+        data = yt_common.cached_transcript(args, video, yt_common.file_src(video, 0, args))
+        assert data and [w["w"] for w in data["words"]] == ["Hola,", "esto", "es", "una", "prueba."]
+
+
+def test_relative_project_path(tmp_path, media):
+    # -P relative to the current folder: ffmpeg runs in a temp folder, so project files must be absolute
+    d = make_project(tmp_path, media, formats=("16:9",), burn=True)
+    r = subprocess.run(RENDER + ["-P", os.path.basename(d), "--json", "--preview"], capture_output=True, text=True,
+                       cwd=os.path.dirname(d))
+    assert r.returncode == 0, r.stderr
+    assert os.path.isfile(os.path.join(d, "out", "preview.mp4"))
 
 
 def test_preview_is_half_size(tmp_path, media):

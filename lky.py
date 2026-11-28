@@ -30,7 +30,7 @@ sys.path.insert(0, HERE)
 
 import backends  # noqa: E402
 import project as proj  # noqa: E402
-from yt_common import default_language, die  # noqa: E402
+from yt_common import CONFIG, default_language, die  # noqa: E402
 
 FLOWS_DIR = os.path.join(HERE, "flows")
 SKILLS_DIR = os.path.join(HERE, "skills")   # the Claude Code plugin's skills (see .claude-plugin/)
@@ -321,6 +321,19 @@ def chapter_times(path):
     return times
 
 
+def caption_font_problem(font):
+    """Burned captions name a font; when it isn't installed, libass quietly draws them with another one
+    (other widths: a caption can go to two lines). The warning to show, or None. Needs fc-match (fontconfig)."""
+    if not shutil.which("fc-match"):
+        return None
+    r = subprocess.run(["fc-match", "-f", "%{family}", f"{font}:bold"], capture_output=True, text=True)
+    got = r.stdout.strip()
+    if r.returncode or not got or font.lower() in got.lower():
+        return None
+    return (f"captions: the font {font!r} isn't installed, they are drawn with {got.split(',')[0]!r} "
+            "(install it, or set CAPTION_FONT in the config, then render again)")
+
+
 def cmd_check(args):
     try:
         pj = proj.load(args.project)
@@ -365,6 +378,10 @@ def cmd_check(args):
             errors.append(f"{fmt}: loudness {i:.1f} LUFS, expected -14 (±1)")
         if tp is not None and tp > -0.5:
             errors.append(f"{fmt}: peak {tp:.1f} dBFS, expected at most -1")
+    if pj["timeline"].get("captions", {}).get("burn"):
+        w = caption_font_problem(CONFIG.get("CAPTION_FONT") or "DejaVu Sans")
+        if w:
+            warnings.append(w)
     srt = os.path.join(root, "out", "video.srt")
     if os.path.isfile(srt):
         cues = srt_cues(srt)
