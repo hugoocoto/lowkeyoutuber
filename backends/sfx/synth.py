@@ -144,7 +144,7 @@ class Backend(Base):
         samples = fn(dur, seed=int(h[:8], 16))
         if max_dur:  # some kinds have a minimum length; never go past what was asked
             samples = samples[:int(SR * dur)]
-        part = dst[:-4] + ".part.wav"
+        part = f"{dst[:-4]}.{os.getpid()}.part.wav"
         with tempfile.TemporaryDirectory() as tmp:
             raw = os.path.join(tmp, "raw.wav")
             _write_wav(raw, samples)

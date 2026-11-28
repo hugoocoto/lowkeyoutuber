@@ -83,7 +83,7 @@ class Backend(backends.Base):
             if out_path.lower().endswith(".wav"):
                 cmd.extend(["-c:a", "pcm_s16le"])
             base, ext = os.path.splitext(out_path)
-            part = f"{base}.part{ext}"  # a failed run never leaves a file the cache would reuse
+            part = f"{base}.{os.getpid()}.part{ext}"  # per process; a failed run never leaves a file the cache reuses
             cmd.append(part)
             fr = subprocess.run(cmd, capture_output=True, text=True)
             if fr.returncode or not os.path.isfile(part):
