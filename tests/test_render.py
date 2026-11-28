@@ -203,3 +203,17 @@ def test_sfx_bus_and_loop_fade(tmp_path):
     assert head < mid - 5.0
     assert abs(during_sfx - mid) < 2.0
     assert tail < mid - 5.0
+
+
+def test_captions_never_overlap():
+    # a caption that starts less than 0.15 s after the previous one ends: both on screen at once would be
+    # stacked by libass on two lines, so the previous one must end when the next one starts
+    import render as r
+    words = [{"w": w, "s": i * 0.3, "e": i * 0.3 + 0.28} for i, w in enumerate(("uno dos tres cuatro cinco seis siete "
+                                                                               "ocho nueve diez once doce").split())]
+    t = lambda s: int(s.split(":")[0]) * 3600 + int(s.split(":")[1]) * 60 + float(s.split(":")[2])
+    for style in ("plain", "word-highlight"):
+        for W, H in ((1920, 1080), (1080, 1920), (1080, 1080)):
+            ev = [(t(l.split(",")[1]), t(l.split(",")[2])) for l in r.build_ass(words, W, H, style).splitlines()
+                  if l.startswith("Dialogue:")]
+            assert len(ev) > 1 and all(a[1] <= b[0] for a, b in zip(ev, ev[1:])), (style, W, H)

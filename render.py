@@ -420,21 +420,28 @@ Style: Default,{font},{fs},{ass_colour(color)},{ass_colour(color)},{edge},&H6400
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    lines = []
+    events = []   # (start, end, text)
     for grp in caption_groups(words, per, chars):
         texts = [re.sub(r"[{}\\]", "", x["w"]) for x in grp]
         if vertical:
             texts = [t.upper() for t in texts]
         if style == "plain":
-            end = grp[-1]["e"] + 0.15
-            lines.append(f"Dialogue: 0,{ass_time(grp[0]['s'])},{ass_time(end)},Default,,0,0,0,,{' '.join(texts)}")
+            events.append((grp[0]["s"], grp[-1]["e"] + 0.15, " ".join(texts)))
             continue
         for k, w in enumerate(grp):
             t0 = w["s"]
             t1 = max(grp[k + 1]["s"] if k + 1 < len(grp) else w["e"] + 0.15, t0 + 0.08)
             shown = " ".join((r"{\c" + hl + r"\fscx112\fscy112}" + t + r"{\r}") if i == k else t
                              for i, t in enumerate(texts))
-            lines.append(f"Dialogue: 0,{ass_time(t0)},{ass_time(t1)},Default,,0,0,0,,{shown}")
+            events.append((t0, t1, shown))
+    # never two captions at once: libass would stack them on two lines (the caption seems to jump)
+    events.sort(key=lambda e: e[0])
+    lines = []
+    for n, (t0, t1, text) in enumerate(events):
+        if n + 1 < len(events):
+            t1 = min(t1, events[n + 1][0])
+        if t1 > t0:
+            lines.append(f"Dialogue: 0,{ass_time(t0)},{ass_time(t1)},Default,,0,0,0,,{text}")
     return head + "\n".join(lines) + "\n"
 
 
