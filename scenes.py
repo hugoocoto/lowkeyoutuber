@@ -18,7 +18,8 @@ of the narration, e.g. "at": "coma" = when the voice says "coma")
     code      {"code", "lang": "c", "check": "program"|"fragment"|false, "run": true,
                "highlight": [{"lines": [2], "at": "coma"}], "output_at": ...}
               C code is compiled (and run, with "run") for real: the output shown is the
-              program's real output. A compile error stops the scene.
+              program's real output. A compile error stops the scene. Highlighted languages: c,
+              cpp, java, js/ts, json, python, sh (others are shown plain).
     terminal  {"commands": [{"cmd": "ls -l", "at": ...}], "cwd": "path"}   commands run for
               real (20 s timeout, no API keys in the environment); their output is shown
     diagram   {"boxes": [{"id", "label", "x", "y", "w", "h"}], "arrows": [{"from", "to", "label"}],
@@ -96,6 +97,18 @@ KEYWORDS = {
 }
 KEYWORDS["bash"] = KEYWORDS["sh"]
 KEYWORDS["cpp"] = KEYWORDS["c"] + " class namespace template typename public private protected new delete std"
+KEYWORDS["java"] = ("abstract assert boolean break byte case catch char class const continue default do double else "
+                    "enum extends final finally float for if implements import instanceof int interface long new "
+                    "package private protected public record return short static super switch this throw throws try "
+                    "var void volatile while true false null")
+KEYWORDS["js"] = ("async await break case catch class const continue default delete do else export extends false "
+                  "finally for from function if import in instanceof let new null of return static super switch "
+                  "this throw true try typeof undefined var void while yield")
+KEYWORDS["ts"] = KEYWORDS["js"] + " interface type enum implements private public readonly as"
+KEYWORDS["javascript"], KEYWORDS["typescript"] = KEYWORDS["js"], KEYWORDS["ts"]
+KEYWORDS["json"] = "true false null"
+SLASH_COMMENTS = ("c", "cpp", "java", "js", "javascript", "ts", "typescript")   # // and /* */, not #
+ANNOTATIONS = ("java", "ts", "typescript")   # @Annotation, drawn like C's #include
 
 
 # ---------------------------------------------------------------------------
@@ -173,8 +186,8 @@ class Clock:
 def tokens(code, lang):
     """Tiny syntax highlighter: [(class or None, text)]."""
     kw = set(KEYWORDS.get(lang, "").split())
-    comment = r"//[^\n]*|/\*.*?\*/" if lang in ("c", "cpp") else r"#[^\n]*"
-    rx = re.compile(rf"(?P<c>{comment})|(?P<p>^\s*#\s*\w+[^\n]*)|(?P<s>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*')"
+    comment = r"//[^\n]*|/\*.*?\*/" if lang in SLASH_COMMENTS else r"#[^\n]*"
+    rx = re.compile(rf"(?P<c>{comment})|(?P<p>^\s*#\s*\w+[^\n]*)|(?P<a>@[A-Za-z_]\w*)|(?P<s>\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*')"
                     r"|(?P<n>\b\d[\w.]*\b)|(?P<w>[A-Za-z_]\w*)(?P<call>\s*\()?|(?P<o>.)", re.S | re.M)
     out = []
     for m in rx.finditer(code):
@@ -182,6 +195,8 @@ def tokens(code, lang):
             out.append(("c", m.group("c")))
         elif m.group("p") and lang in ("c", "cpp"):
             out.append(("p", m.group("p")))
+        elif m.group("a"):
+            out.append(("p" if lang in ANNOTATIONS else None, m.group("a")))
         elif m.group("s"):
             out.append(("s", m.group("s")))
         elif m.group("n"):
