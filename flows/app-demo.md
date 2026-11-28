@@ -22,6 +22,12 @@ inputs: the app (URL, binary, or repo plus how to run it) (required); what to sh
    - web: `lky run capture.py -P work/<name> --kind web --url http://localhost:3000`
    - CLI: `lky run capture.py -P work/<name> --kind terminal --cwd <demo folder>`
    - GUI: `lky run capture.py -P work/<name> --kind desktop --app "<command>"`
+   - The app uses the camera (a QR scanner, a video call)? `--fake-camera FILE` makes the page's camera
+     show an image or video. Two apps talking to each other (a customer's phone and the shop's): record
+     each with its own project at the same time, note when each started, and put them side by side with
+     `frame.py` (`--cap a.mp4 --cap b.mp4@OFFSET`).
+   - A phone-sized capture (`--size 390x844`) in a wide video: `frame.py` puts it in a phone frame on a
+     background, per format, above the captions.
    It records on a virtual screen/browser (the person's desktop isn't touched), sets each line's `at`,
    puts the capture on the timeline and proposes zooms in `proposals/zooms.json` for clicks and typing
    into web elements. Not every one gets a zoom: actions close in time are merged, and a zoom shorter
