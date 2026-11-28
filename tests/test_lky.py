@@ -30,15 +30,68 @@ def test_flows_parse_and_have_the_sections():
 
 
 def test_skill_is_in_sync():
-    path = os.path.join(ROOT, ".claude", "skills", lky.SKILL_NAME, "SKILL.md")
+    path = os.path.join(ROOT, "skills", lky.SKILL_NAME, "SKILL.md")   # the plugin's skill
     assert os.path.isfile(path), "run ./lky skills"
     assert open(path, encoding="utf-8").read() == lky.skill_text(lky.flows()), "run ./lky skills"
 
 
-def test_no_stale_per_flow_skills():
-    d = os.path.join(ROOT, ".claude", "skills")
-    for f in lky.flows():
-        assert not os.path.isdir(os.path.join(d, f["name"])), "run ./lky skills (it removes the old ones)"
+def test_no_stale_generated_skills():
+    d = os.path.join(ROOT, ".claude", "skills")   # where older versions wrote them
+    for name in [f["name"] for f in lky.flows()] + [lky.SKILL_NAME]:
+        assert not os.path.isfile(os.path.join(d, name, "SKILL.md")), "run ./lky skills (it removes the old ones)"
+
+
+def test_old_skills_are_removed_but_hand_written_files_stay(tmp_path, monkeypatch):
+    old = tmp_path / ".claude" / "skills"
+    (old / "voice-over").mkdir(parents=True)
+    (old / "voice-over" / "SKILL.md").write_text("lowkeyoutuber flow: x. Follow it in this repository exactly, "
+                                                "step by step")
+    (old / "voice-over" / "notes.md").write_text("mine")
+    (old / lky.SKILL_NAME).mkdir()
+    (old / lky.SKILL_NAME / "SKILL.md").write_text(lky.SKILL_MARK)
+    (old / "my-skill").mkdir()
+    (old / "my-skill" / "SKILL.md").write_text("written by hand")
+    monkeypatch.setattr(lky, "OLD_SKILLS_DIR", str(old))
+    lky.remove_old_skills()
+    assert not (old / "voice-over" / "SKILL.md").exists() and (old / "voice-over" / "notes.md").exists()
+    assert not (old / lky.SKILL_NAME).exists()
+    assert (old / "my-skill" / "SKILL.md").read_text() == "written by hand"
+
+
+def test_launcher_runs_tools_and_finds_the_plugin_venv(tmp_path):
+    env = dict(os.environ, PYTHON=sys.executable)   # no venv is created with $PYTHON set
+    r = subprocess.run([os.path.join(ROOT, "bin", "lky"), "run", "lky.py", "flows", "--json"],
+                       capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)
+    # installed as a plugin: cache/<marketplace>/<plugin>/<version>/ -> data/<plugin>-<marketplace>/venv
+    ver = tmp_path / "plugins" / "cache" / "mkt" / "lowkeyoutuber" / "1.0"
+    ver.mkdir(parents=True)
+    import shutil
+    shutil.copy2(os.path.join(ROOT, "lky"), ver / "lky")
+    shutil.copytree(os.path.join(ROOT, ".claude-plugin"), ver / ".claude-plugin")
+    env = {k: v for k, v in os.environ.items() if k not in ("LKY_VENV", "PYTHON")}
+    venv = tmp_path / "plugins" / "data" / "lowkeyoutuber-mkt" / "venv"
+    # no data/ folder yet: still the plugin's venv, created there
+    r = subprocess.run([str(ver / "lky"), "venv"], capture_output=True, text=True, env=env)
+    assert r.returncode == 0 and r.stdout.strip() == str(venv), r.stderr
+    # a creation that stopped before pip was installed is repaired on the next run
+    for pip in venv.glob("lib/python*/site-packages/pip*"):   # pip and its dist-info
+        shutil.rmtree(pip)
+    r = subprocess.run([str(ver / "lky"), "venv"], capture_output=True, text=True, env=env)
+    assert r.returncode == 0 and list(venv.glob("lib/python*/site-packages/pip")), r.stderr
+    r = subprocess.run([str(ver / "lky"), "venv"], capture_output=True, text=True,
+                       env=dict(env, LKY_VENV=str(tmp_path / "mine")))
+    assert r.stdout.strip() == str(tmp_path / "mine")   # $LKY_VENV wins (created there)
+
+
+def test_plugin_manifests_point_at_the_skill():
+    plugin = json.load(open(os.path.join(ROOT, ".claude-plugin", "plugin.json")))
+    market = json.load(open(os.path.join(ROOT, ".claude-plugin", "marketplace.json")))
+    assert plugin["name"] == lky.SKILL_NAME == market["plugins"][0]["name"]
+    assert market["plugins"][0]["source"] == "./"
+    assert "${CLAUDE_PLUGIN_ROOT}/AGENTS.md" in lky.skill_text(lky.flows())
+    assert os.access(os.path.join(ROOT, "bin", "lky"), os.X_OK)
 
 
 def test_skill_frontmatter_is_valid_yaml():

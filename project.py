@@ -26,7 +26,7 @@ class ProjectError(ValueError):
     pass
 
 
-def new(path, flow=None, lang="es", formats=("16:9",), inputs=None, fps=30):
+def new(path, flow=None, lang=None, formats=("16:9",), inputs=None, fps=30):
     """flow: only a note of which example in flows/ the project started from (optional)."""
     if os.path.exists(os.path.join(path, "project.json")):
         raise ProjectError(f"{path} already has a project.json")

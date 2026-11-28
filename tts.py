@@ -40,7 +40,7 @@ import sys
 import backends
 import project as proj
 from align import align_text, similarity
-from yt_common import die, log, need
+from yt_common import default_language, die, log, need
 
 GAP = 0.35   # silence between lines with --place, seconds
 
@@ -200,7 +200,7 @@ def main():
         script = proj.load_script(args.project)
     except proj.ProjectError as e:
         die(str(e))
-    lang = script.get("lang") or pj.get("lang")
+    lang = script.get("lang") or pj.get("lang") or default_language()
     lines = script["lines"]
     if args.lines:
         want = {x.strip() for x in args.lines.split(",")}

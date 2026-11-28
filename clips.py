@@ -17,12 +17,10 @@ PIPELINE
        TikTok-style captions (the current word is highlighted).
     Optionally it also writes a short summary of the whole video.
 
-SETUP (Arch Linux)
-    sudo pacman -S ffmpeg ttf-dejavu ollama-cuda
-    sudo systemctl enable --now ollama
+SETUP
+    ffmpeg and DejaVu fonts from your system (README: Install)
     ollama pull qwen2.5:7b                       # only used without claude/codex/opencode
-    python -m venv ~/.venvs/subs && source ~/.venvs/subs/bin/activate
-    pip install faster-whisper nvidia-cublas-cu12 'nvidia-cudnn-cu12==9.*'
+    lky pip install faster-whisper nvidia-cublas-cu12 'nvidia-cudnn-cu12==9.*'
     Clips are encoded with NVENC on the NVIDIA GPU (--encoder libx264 for CPU).
 
 USAGE

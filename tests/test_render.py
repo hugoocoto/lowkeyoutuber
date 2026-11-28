@@ -63,6 +63,24 @@ def test_render_formats_captions_loudness(tmp_path, media):
     assert render(d, "-f", "--format", "9:16")["outputs"] == ["out/video_9x16.mp4"]
 
 
+def test_square_and_4x5_formats(tmp_path, media):
+    d = make_project(tmp_path, media, formats=("1:1", "4:5"))
+    s = render(d)
+    assert s["outputs"] == ["out/video.mp4", "out/video_4x5.mp4"]
+    for f, (w, h) in (("video.mp4", (1080, 1080)), ("video_4x5.mp4", (1080, 1350))):
+        v = next(x for x in probe(os.path.join(d, "out", f))["streams"] if x["codec_type"] == "video")
+        assert (v["width"], v["height"]) == (w, h)
+
+
+def test_square_captions_are_short_and_big():
+    import render as r
+    words = [{"w": w, "s": i * 0.3, "e": i * 0.3 + 0.25} for i, w in enumerate("uno dos tres cuatro cinco seis".split())]
+    wide, square = r.build_ass(words, 1920, 1080, "plain"), r.build_ass(words, 1080, 1080, "plain")
+    assert "UNO DOS TRES CUATRO\n" in square and "uno dos tres cuatro cinco seis" in wide
+    fs = [int(t.split("Style: Default,")[1].split(",")[1]) for t in (wide, square)]
+    assert fs[1] > fs[0]
+
+
 def test_zoom_changes_the_picture(tmp_path, media):
     d = make_project(tmp_path, media, formats=("16:9",), burn=False)
     render(d, "--frames", "1.2,3.0")   # 0.2 s into the clip (no zoom) and 2 s in (zoomed)

@@ -15,7 +15,7 @@ import os
 
 from backends import Base, BackendError
 from backends.tts._common import cuda_device, voice_ref, write_wav
-from yt_common import CONFIG, free_ollama_vram, log
+from yt_common import CONFIG, default_language, free_ollama_vram, log
 
 
 class Backend(Base):
@@ -51,9 +51,12 @@ class Backend(Base):
         return self._tts
 
     def speak(self, text, out_base, lang=None, context=None, draft=False):
+        lang = lang or default_language()
+        if not lang:
+            raise BackendError('chatterbox needs the language: set the language: lky new --lang xx, or script.json "lang"')
         try:
             tts = self._load()
-            wav = tts.generate(text, language_id=(lang or "es"), audio_prompt_path=voice_ref(),
+            wav = tts.generate(text, language_id=lang, audio_prompt_path=voice_ref(),
                                exaggeration=float(CONFIG.get("CHATTERBOX_EXAGGERATION") or 0.5))
         except (RuntimeError, ValueError, OSError, AssertionError) as e:
             raise BackendError(f"chatterbox failed: {e}")

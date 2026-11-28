@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# on PATH while the Claude Code plugin is enabled: same as the repo's ./lky
+exec "$(dirname "$(readlink -f "$0")")/../lky" "$@"

@@ -4,7 +4,7 @@ yt_common.py - Code shared by the toolkit's Python scripts. Not meant to be run 
 CONFIG
     ~/.config/lowkeyoutuber/config holds your defaults as KEY="value" lines,
     so you don't repeat options on every run. Command-line options win.
-        LANGUAGE="es"                      Whisper language (-l)
+        LANGUAGE="en"                      your language: Whisper (-l), TTS, new projects (empty = unknown)
         JARGON="PM, Neovim, Lua"           names Whisper should spell right (--prompt)
         CAM="934:384:346:303"              facecam box in the recording (clips/thumbnail --cam)
         FOOTER="~/.config/lowkeyoutuber/footer.txt"   appended to descriptions
@@ -95,6 +95,12 @@ def load_config():
 CONFIG = load_config()
 
 
+def default_language():
+    """The user's language when nothing explicit was given: config LANGUAGE, else env LKY_LANG,
+    else None (unknown: Whisper detects it, TTS backends ask the person to set it)."""
+    return (CONFIG.get("LANGUAGE") or "").strip() or (os.environ.get("LKY_LANG") or "").strip() or None
+
+
 def use_nvidia_gpu():
     """On hybrid-graphics laptops (prime-run installed), send GPU work to the NVIDIA card, as
     `prime-run` does, for this process and everything it starts (ffmpeg, Chrome, models).
@@ -146,8 +152,8 @@ def clock(t, hours=False):
 # ---------------------------------------------------------------------------
 def add_transcript_args(p):
     g = p.add_argument_group("transcription")
-    g.add_argument("-l", "--language", default=CONFIG.get("LANGUAGE") or None,
-                   help="language code, e.g. en, es, fr (default: config LANGUAGE, else auto-detect)")
+    g.add_argument("-l", "--language", default=default_language(),
+                   help="language code, e.g. en, es, fr (default: config LANGUAGE, else env LKY_LANG, else auto-detect)")
     g.add_argument("-m", "--model", default="large-v3-turbo",
                    help="Whisper model: small, medium, large-v3, large-v3-turbo (default large-v3-turbo)")
     g.add_argument("-t", "--track", "--audio-track", dest="track", type=int, default=0,
@@ -305,8 +311,8 @@ def raw_transcript(args, video):
     try:
         import faster_whisper  # noqa: F401
     except ImportError:
-        die("faster-whisper is not installed. Activate the venv (source ~/.venvs/subs/bin/activate) "
-            "or run: pip install faster-whisper")
+        die("faster-whisper is not installed. Install it into the toolkit's venv: "
+            "lky pip install faster-whisper")
     if args.device != "cpu":
         ensure_cuda_env()
         free_ollama_vram()

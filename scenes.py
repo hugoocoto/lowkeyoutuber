@@ -53,7 +53,7 @@ import tempfile
 import backends
 import project as proj
 from tts import line_spans, probe_duration
-from yt_common import CONFIG, die, log, need
+from yt_common import CONFIG, default_language, die, log, need
 
 WORDS_PER_SECOND = 2.5   # length estimate for lines without narration yet
 
@@ -122,9 +122,9 @@ def css(W, H):
     return out
 
 
-def page(W, H, dur, body, js, lang="es"):
+def page(W, H, dur, body, js, lang=None):
     return f"""<!doctype html>
-<html lang="{esc(lang)}"><head><meta charset="UTF-8" />
+<html{(' lang="' + esc(lang) + '"') if lang else ""}><head><meta charset="UTF-8" />
 <meta name="viewport" content="width={W}, height={H}" />
 <script src="gsap.min.js"></script>
 <style>{css(W, H)}</style></head>
@@ -452,7 +452,7 @@ Return ONLY the HTML document."""
 
 def t_custom(sc, clock, dur, W, H, lang, errors=None):
     words = " ".join(f"{w['w']}@{w['s'] + clock.offset:.1f}" for w in clock.words) or "(none)"
-    prompt = CUSTOM_PROMPT.format(W=W, H=H, dur=dur, brief=sc.get("brief", ""), words=words, lang=lang,
+    prompt = CUSTOM_PROMPT.format(W=W, H=H, dur=dur, brief=sc.get("brief", ""), words=words, lang=lang or "the language of the narration",
                                   pad=sizes(W, H)["PAD"])
     if errors:
         prompt += "\n\nYour previous version had these problems, fix them:\n" + "\n".join(errors)
@@ -512,7 +512,7 @@ def main():
         die(str(e))
     root = proj.root(args.project)
     lines = script["lines"]
-    lang = script.get("lang") or pj.get("lang") or "es"
+    lang = script.get("lang") or pj.get("lang") or default_language()
     want = {x.strip() for x in args.lines.split(",")} if args.lines else None
     if want and want - {line["id"] for line in lines}:
         die(f"no such lines: {', '.join(sorted(want - {line['id'] for line in lines}))}")

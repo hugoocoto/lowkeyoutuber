@@ -86,7 +86,7 @@
 #   process-voice.sh -t 1 -m 0 -c raw.mkv            # clean before editing -> raw_clean.mkv
 #   process-voice.sh -L edit.mkv                     # after editing: loudness only
 #
-# Dependencies (Arch): sudo pacman -S ffmpeg curl
+# Dependencies: ffmpeg and curl from your system (pacman / apt / brew install ffmpeg curl)
 # ---END USAGE---
 
 set -euo pipefail
