@@ -1,6 +1,6 @@
 # Project format (version 1)
 
-The tools that work on a timeline share a project folder made by `./lky new <dir>`. Agents edit
+The tools that work on a timeline share a project folder made by `lky new <dir>`. Agents edit
 `project.json` and `script.json`, and `render.py` turns them into video. Tools that work on plain
 files (`cut.py`, `subtitles.py`, `meta.py`, `thumbnail.py`, `clips.py`, `upload.py`) don't need one;
 keep their results in the project's `out/`, each in its own way: `meta.py -o out`, `thumbnail.py -o out`
@@ -51,8 +51,13 @@ myproject/
 
 - **flow**, **inputs**: optional notes: the example in `flows/` the project started from, and what
   the person asked for. No tool requires them.
-- **formats**: name → `[width, height]` (even numbers). The first one renders to `out/video.mp4`,
-  the others to `out/video_<name>.mp4` (`9:16` → `video_9x16.mp4`).
+- **lang**: language code (`en`, `es`...), from `lky new --lang`, else the config's `LANGUAGE`, else
+  `LKY_LANG`; `null` means unknown: ask the person or detect it from the recording before narration (TTS
+  backends refuse to run without it; Whisper auto-detects).
+- **formats**: name → `[width, height]` (even numbers). `lky new --format` knows `16:9` (YouTube,
+  presentations), `9:16` (Shorts, Reels, TikTok), `1:1` (X, LinkedIn) and `4:5` (LinkedIn, Instagram
+  feeds); any other size can be written here by hand. The first one renders to `out/video.mp4`, the
+  others to `out/video_<name>.mp4` (`9:16` → `video_9x16.mp4`).
 - **media**: id → file. Paths are relative to the project, or absolute. `words` is a transcript in the
   `*.words.json` shape (`{"words": [{"w", "s", "e"}]}`); `track` is the voice's audio track;
   `variants` gives one file per format (`{"16:9": "scenes/01_16x9.mp4"}`, written by scenes.py);

@@ -45,7 +45,8 @@ def find_font():
         family, _, path = r.stdout.partition("|")
         if r.returncode == 0 and family.lower().startswith(pattern.split(":")[0].lower()) and os.path.isfile(path):
             return path, ratio
-    die("no bold font found. Install one: sudo pacman -S ttf-dejavu")
+    die("no bold font found. Install DejaVu: sudo pacman -S ttf-dejavu / sudo apt install fonts-dejavu / "
+        "brew install --cask font-dejavu")
 
 
 def duration(video):

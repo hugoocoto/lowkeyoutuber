@@ -1,36 +1,56 @@
 # lowkeyoutuber
 
-A box of small tools for making YouTube videos on your own machine: clean up a recording's voice,
-cut it, subtitle it, write titles and chapters, make thumbnails and Shorts, narrate a script, animate
-scenes, record an app demo, and upload. Each tool does one thing and works on files, so you (or an AI
-agent) can use any of them on their own or chain them however the video needs.
+A box of small tools for making videos on your own machine: for YouTube, Shorts and Reels, posts on
+X or LinkedIn, or a demo of your project. Clean up a recording's voice, cut it, subtitle it, write
+titles and chapters, make thumbnails and short clips, narrate a script, animate scenes, record an app
+demo, render it in several shapes at once (16:9, 9:16, 1:1, 4:5), and upload to YouTube. Each tool does
+one thing and works on files, so you (or an AI agent) can use any of them on their own or chain them
+however the video needs.
 
 ## Ask an AI to do it
 
-Open this folder in Claude Code (or Codex, OpenCode...) and say what you want: "edit this
-recording", "make a Short about the comma operator", "add a voice to this demo", "write me a
-script and I'll record it". The agent reads `AGENTS.md`, picks the tools, and asks as much as you
-want it to: say "just do it" and it won't stop to ask; edit with it and it shows you each step.
+Any coding agent that reads `AGENTS.md` can use it (Codex, OpenCode, Claude Code, Gemini CLI,
+Cursor...): clone the repo, open your agent there, and say what you want: "edit this recording",
+"make a square clip for LinkedIn about this demo", "add a voice to this video", "write me a script and
+I'll record it". The agent reads `AGENTS.md`, picks the tools, and asks as much as you want it to: say
+"just do it" and it won't stop to ask; edit with it and it shows you each step. Python packages go into
+the toolkit's own venv, which the agent creates and fills as features need them (or asks you first, if
+you prefer).
 
 ```
+git clone https://github.com/hugoocoto/lowkeyoutuber
+cd lowkeyoutuber
 ./lky backends    # which models it can use on this machine
 ./lky flows       # worked examples of common videos (flows/)
 ```
+
+To use it from the folder with your recordings instead, put the clone's `lky` on your PATH
+(`ln -s "$PWD/lky" ~/.local/bin/lky`) and tell your agent to read the clone's `AGENTS.md`. In Claude Code, the repo also installs as a plugin that does
+this for you:
+
+```
+/plugin marketplace add hugoocoto/lowkeyoutuber
+/plugin install lowkeyoutuber@lowkeyoutuber
+```
+
+(updates: `/plugin marketplace update lowkeyoutuber`).
 
 ## Use the tools yourself
 
 From a recording to an upload, using only what you need (outputs go wherever `-o` says):
 
 ```
-source ~/.venvs/subs/bin/activate                     # see Install
 mkdir -p out
-./process-voice.sh -t 1 -o out/video.mp4 rec.mkv      # clean voice on track 1, -14 LUFS
-python subtitles.py --audio-from rec.mkv -t 1 out/video.mp4 > out/video.srt
-python meta.py -o out out/video.mp4                   # chapters, titles, description, tags (overwrites them)
-python thumbnail.py -o out out/video.mp4              # thumbnail designs
-python clips.py -o out/shorts out/video.mp4           # vertical Shorts
-python upload.py out/                                  # upload to YouTube as private
+./lky run process-voice.sh -t 1 -o out/video.mp4 rec.mkv   # clean voice on track 1, -14 LUFS
+./lky run subtitles.py --audio-from rec.mkv -t 1 out/video.mp4 > out/video.srt
+./lky run meta.py -o out out/video.mp4               # chapters, titles, description, tags (overwrites them)
+./lky run thumbnail.py -o out out/video.mp4          # thumbnail designs
+./lky run clips.py -o out/shorts out/video.mp4       # vertical Shorts
+./lky run upload.py out/                             # upload to YouTube as private
 ```
+
+`./lky run` runs a tool with the toolkit's venv (see Install); `python tool.py` works too inside an
+activated venv.
 
 `upload.py` takes any folder with these files (`--dry-run` checks them first):
 
@@ -47,23 +67,33 @@ python upload.py out/                                  # upload to YouTube as pr
 Edit any of them by hand. Rerunning `meta.py` or `thumbnail.py` overwrites these files, so once you have
 edited them, resume from the next step instead. Tools that cache (transcripts, TTS) skip work already done.
 
-## Install (Arch Linux)
+## Install
+
+System packages (ffmpeg and fonts; the rest only for the features you use, see `AGENTS.md`):
 
 ```
-sudo pacman -S ffmpeg ttf-dejavu nvidia-prime
-python -m venv ~/.venvs/subs
-~/.venvs/subs/bin/pip install faster-whisper nvidia-cublas-cu12 'nvidia-cudnn-cu12==9.*'
-~/.venvs/subs/bin/pip install google-api-python-client google-auth-oauthlib   # for uploading
+sudo pacman -S ffmpeg ttf-dejavu                 # Arch (+ nvidia-prime on a hybrid NVIDIA laptop)
+sudo apt install ffmpeg fonts-dejavu python3-venv   # Debian / Ubuntu
+brew install ffmpeg && brew install --cask font-dejavu   # macOS
 ```
+
+Python packages go into the toolkit's own venv: `$LKY_VENV` if you set it, the plugin's data folder
+when installed as a plugin, else `~/.venvs/lowkeyoutuber`. `./lky` creates it on first use, and
+`./lky pip` installs into it:
+
+```
+./lky pip install faster-whisper                                        # transcription (needed by most tools)
+./lky pip install nvidia-cublas-cu12 'nvidia-cudnn-cu12==9.*'          # Whisper on an NVIDIA GPU
+./lky pip install google-api-python-client google-auth-oauthlib        # uploading to YouTube
+```
+
+Already have a venv? `export LKY_VENV=~/path/to/venv` and `lky` uses it.
 
 Titles, chapters and Shorts picks are written by the first AI command-line tool it finds:
-Claude Code, Codex or OpenCode. Without any, install a free local model:
+Claude Code, Codex or OpenCode. Without any, install a free local model with
+[Ollama](https://ollama.com) and `ollama pull qwen2.5:7b`.
 
-```
-sudo pacman -S ollama-cuda && sudo systemctl enable --now ollama && ollama pull qwen2.5:7b
-```
-
-Works without an NVIDIA GPU too, just slower.
+Works without an NVIDIA GPU (and on macOS), just slower.
 
 ## Configuration
 
@@ -89,17 +119,17 @@ and `cam_check.jpg` showing where it points.
 ## Good to know
 
 - **Cutting.** Edit your recording in Kdenlive or Shotcut, or write the parts to remove in a
-  text file (`17:14 - 17:22`, one per line) and run `./cut.py rec.mkv cuts.txt`. Add `--check`
+  text file (`17:14 - 17:22`, one per line) and run `lky run cut.py rec.mkv cuts.txt`. Add `--check`
   to read the words around each cut before rendering. `autocut.py` removes every pause and
   repeated sentence by itself; in screencasts, pauses often have something happening on screen.
 - **Music or desktop audio on its own track?** Clean the voice before editing, because editors
-  mix all tracks together: `./process-voice.sh -t 1 -m 0 -c rec.mkv` (voice on track 1, music
-  on 0), edit `rec_clean.mkv`, then `./process-voice.sh -L export.mp4` for the loudness only.
-- **Different Shorts.** `python clips.py out/video.mp4 -o out/shorts --pick 2,4` makes clips 2
+  mix all tracks together: `lky run process-voice.sh -t 1 -m 0 -c rec.mkv` (voice on track 1, music
+  on 0), edit `rec_clean.mkv`, then `lky run process-voice.sh -L export.mp4` for the loudness only.
+- **Different Shorts.** `lky run clips.py out/video.mp4 -o out/shorts --pick 2,4` makes clips 2
   and 4 of the ones listed in `out/shorts/clips.json`.
-- **Uploading** needs a one-time Google setup, explained in `python upload.py -h`. Videos
+- **Uploading** needs a one-time Google setup, explained in `lky run upload.py -h`. Videos
   arrive private (YouTube's rule for personal projects): publish them in YouTube Studio.
-  Upload the video first, then `python upload.py --shorts out/`, so the Shorts link to it.
+  Upload the video first, then `lky run upload.py --shorts out/`, so the Shorts link to it.
 - **Review what AI wrote.** Subtitles, titles and descriptions make mistakes.
 
 ## The tools
@@ -110,7 +140,7 @@ On files:
 
 | Tool | What it does |
 |---|---|
-| `process-voice.sh` | Removes background noise and sets the volume YouTube expects. |
+| `process-voice.sh` | Removes background noise and sets the volume platforms expect (-14 LUFS). |
 | `subtitles.py` | Writes subtitles from what you say. |
 | `meta.py` | Writes chapters, titles, description, tags and thumbnail texts. |
 | `thumbnail.py` | Makes thumbnails: a frame of the video, your face (if there's a facecam), a few big words. |
@@ -157,23 +187,24 @@ MUSIC_DIR="~/Music/lowkeyoutuber"          # tracks you're allowed to use
 | Judge | Ollama vision model (local), Gemini Decisions (cloud, `GEMINI_API_KEY`) |
 | Search | OpenCLIP + Ollama text embeddings (local), Gemini Embedding 2 (cloud) |
 
-Install what you use, in the same venv (`source ~/.venvs/subs/bin/activate` first; never system-wide).
-An AI agent working in the repo does this itself, or picks an alternative (see `AGENTS.md`):
+Install what you use into the toolkit's venv (never system-wide). An AI agent does this itself, or
+picks an alternative (see `AGENTS.md`, which also has the system packages for Debian/Ubuntu and macOS):
 
 ```
-pip install chatterbox-tts            # or qwen-tts, or: kokoro soundfile (+ sudo pacman -S espeak-ng)
-sudo pacman -S nodejs npm             # scenes (HyperFrames installs itself on first use)
-pip install playwright                # app capture in a browser (uses your Chrome/Chromium)
-sudo pacman -S xorg-server-xvfb xdotool xterm   # terminal and desktop capture
-pip install websocket-client          # teleprompter controlling OBS
-pip install open_clip_torch           # local search (with: ollama pull nomic-embed-text)
+./lky pip install chatterbox-tts      # or qwen-tts, or: kokoro soundfile (+ espeak-ng from your system)
+./lky pip install playwright          # app capture in a browser (uses your Chrome/Chromium)
+./lky pip install websocket-client    # teleprompter controlling OBS
+./lky pip install open_clip_torch     # local search (with: ollama pull nomic-embed-text)
 ```
+
+From your system: Node.js 22+ and npm for scenes (HyperFrames installs itself on first use); on Linux,
+Xvfb, xdotool and xterm for terminal and desktop capture.
 
 API keys go in the environment, never in the config.
 
 ## Tests
 
 ```
-~/.venvs/subs/bin/pip install pytest
-~/.venvs/subs/bin/python -m pytest tests     # no GPU, network or API keys needed
+./lky pip install pytest
+"$(./lky venv)/bin/python" -m pytest tests     # no GPU, network or API keys needed
 ```

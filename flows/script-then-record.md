@@ -9,7 +9,7 @@ inputs: the topic and notes (required); length; which parts are recorded (screen
 # Script, then record
 
 ## Steps
-1. **Project:** `./lky new work/<name> --flow script-then-record`.
+1. **Project:** `lky new work/<name> --flow script-then-record`.
 2. **Script:** write `script.json`: short lines (one breath each), in the order they'll be recorded.
    Lines the person won't record can have a `scene` (see flows/generated-short.md) and TTS. Note:
    `align.py --apply` (both modes) refuses to write the timeline unless every script line has a
@@ -21,13 +21,13 @@ inputs: the topic and notes (required); length; which parts are recorded (screen
    - **Check-in:** the person reads it and changes anything that doesn't sound like them.
 3. **Teleprompter:** ask whether OBS's WebSocket server is on (OBS: Tools > WebSocket Server Settings)
    and the password is in `OBS_WEBSOCKET_PASSWORD`. Then tell the person to run (it opens a page):
-   `./teleprompter.py -P work/<name> --obs`. In the page: Space starts/stops a take, → next line,
+   `lky run teleprompter.py -P work/<name> --obs`. In the page: Space starts/stops a take, → next line,
    B marks the last take bad, R retakes, Q finishes. Every take is its own OBS file.
-   Without OBS: `./teleprompter.py -P work/<name>` only shows the text; they record one long take.
+   Without OBS: `lky run teleprompter.py -P work/<name>` only shows the text; they record one long take.
 4. **Match the takes:**
-   - OBS takes: `./align.py -P work/<name> --from-takes` (last good take of each line).
-   - One long take: `./lky add-media -P work/<name> rec.mkv --id rec --track <voice track>`, then
-     `./align.py -P work/<name> --media rec` (the last complete attempt of each line is kept).
+   - OBS takes: `lky run align.py -P work/<name> --from-takes` (last good take of each line).
+   - One long take: `lky add-media -P work/<name> rec.mkv --id rec --track <voice track>`, then
+     `lky run align.py -P work/<name> --media rec` (the last complete attempt of each line is kept).
    It prints each line's take; the lines said differently from the script are marked `changed` in
    `proposals/takes.json`, with what was really said in `said` (the OBS output doesn't show it).
    - Lines **not found**: ask the person to record them again, or drop them from the script.
@@ -35,8 +35,8 @@ inputs: the topic and notes (required); length; which parts are recorded (screen
      second file is fine, but `align.py` works on one recording at a time and each run overwrites
      `proposals/takes.json`:
      1. `cp work/<name>/proposals/takes.json work/<name>/proposals/takes-rec.json`;
-     2. `./lky add-media -P work/<name> rec2.mkv --id rec2 --track <voice track>`, then
-        `./align.py -P work/<name> --media rec2` to find the missing lines' times;
+     2. `lky add-media -P work/<name> rec2.mkv --id rec2 --track <voice track>`, then
+        `lky run align.py -P work/<name> --media rec2` to find the missing lines' times;
      3. build `timeline.video` by hand from both reports: one item per line, `src` the recording it
         came from, `in` = `start` - 0.15 (not below 0) and `out` = `end` + 0.25 (not past the end of
         the file), the same padding `align.py --apply` uses. Listen to every join, then skip step 5.
@@ -44,9 +44,9 @@ inputs: the topic and notes (required); length; which parts are recorded (screen
 5. **Timeline:** the same command with `--apply` puts the chosen takes one after another (takes are kept
    whole: no pause inside a take is trimmed). Add zooms where the screen matters (flows/edit-recording.md
    step 5).
-6. **Render:** `./render.py -P work/<name> --preview --frames auto`, then `./render.py -P work/<name>`.
+6. **Render:** `lky run render.py -P work/<name> --preview --frames auto`, then `lky run render.py -P work/<name>`.
 7. **Upload folder (optional):** metadata, thumbnails and upload as in flows/edit-recording.md
    steps 6-10 (`render.py` already wrote the audio at -14 LUFS and `out/video.srt`).
 
 ## Checks
-`./lky check -P work/<name>`; listen to every join between takes.
+`lky check -P work/<name>`; listen to every join between takes.

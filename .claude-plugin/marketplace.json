@@ -1,0 +1,12 @@
+{
+  "name": "lowkeyoutuber",
+  "owner": { "name": "Hugo Coto" },
+  "description": "Tools for making videos (YouTube, Shorts, X, LinkedIn, project demos) that any AI agent can drive; this marketplace installs them as a Claude Code plugin.",
+  "plugins": [
+    {
+      "name": "lowkeyoutuber",
+      "source": "./",
+      "description": "Make and edit YouTube videos with local tools (recordings, Shorts, narration, scenes, captures, subtitles, thumbnails, uploads)."
+    }
+  ]
+}
