@@ -84,8 +84,12 @@ myproject/
 | `src` | media id or file |
 | `at` | start, seconds on the timeline |
 | `in`, `out` | part of the source (default: all of it) |
+| `dur` | max duration on the timeline (optional; useful with `loop`) |
+| `loop` | repeat the source until `dur` or the end of the video (`false` by default) |
+| `fade_in`, `fade_out` | fade duration in seconds (default `0`) |
 | `gain_db` | volume (default 0; -22 for `duck`) |
-| `duck` | music: goes down while anything else sounds (sidechain) |
+| `duck` | music: goes down while anything on `voice` sounds (sidechain) |
+| `bus` | `"voice"`, `"music"`, or `"sfx"` (default: `"music"` if `duck`, else `"voice"`) |
 | `track` | audio track of the source |
 
 Audio past the end of the video is cut. The mix is normalized to -14 LUFS / -1 dBTP.

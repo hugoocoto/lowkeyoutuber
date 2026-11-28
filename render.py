@@ -135,16 +135,30 @@ def plan(path, pj, fmt=None):
             raise RenderError(f"timeline.audio[{n}]: file not found: {f}")
         info = probe(f)
         a = float(it.get("in", 0))
-        d = float(it["out"]) - a if "out" in it else (info["dur"] or 0) - a
+        src_dur = max((info["dur"] or 0) - a, 0.0)
+        loop = bool(it.get("loop"))
         at = float(it["at"])
+        if "out" in it:
+            seg_d = float(it["out"]) - a
+        else:
+            seg_d = src_dur
+        if "dur" in it:
+            d = float(it["dur"])
+        elif loop:
+            d = max(total - at, 0.0)
+        else:
+            d = seg_d
         if at >= total:
             log(f"timeline.audio[{n}] starts at {at:.1f}s, after the video ends ({total:.1f}s): skipped")
             continue
-        if at + d > total + 0.05:
+        if not loop and at + d > total + 0.05:
             log(f"timeline.audio[{n}] runs {at + d - total:.1f}s past the end of the video: cut there")
-        duck = bool(it.get("duck"))
-        auds.append({"file": f, "a": a, "d": d, "at": at, "duck": duck,
-                     "gain": float(it.get("gain_db", MUSIC_DB if duck else 0.0)),
+        bus = it.get("bus") or ("music" if it.get("duck") else "voice")
+        duck = bool(it.get("duck")) or bus == "music"
+        auds.append({"file": f, "a": a, "d": d, "seg_d": seg_d, "at": at, "duck": duck, "bus": bus,
+                     "loop": loop, "fade_in": float(it.get("fade_in") or 0.0),
+                     "fade_out": float(it.get("fade_out") or 0.0),
+                     "gain": float(it.get("gain_db", MUSIC_DB if bus == "music" else 0.0)),
                      "track": int(it.get("track", m.get("track", 0)))})
         for w in load_words(path, m):
             if a - 0.05 <= w["s"] and w["e"] <= a + d + 0.05:
@@ -240,24 +254,58 @@ def video_inputs(entry, fps, W, H):
 # Audio: mix, then loudness
 # ---------------------------------------------------------------------------
 def mix_audio(vids, auds, total, out, tmp):
-    inputs, graph, voices, music = [], [], [], []
+    inputs, graph, voices, music, sfx = [], [], [], [], []
     k = 0
 
-    def add(file, a, d, at, track, gain, duck):
+    def add(file, a, d, at, track, gain, bus, loop=False, seg_d=None, fade_in=0.0, fade_out=0.0):
         nonlocal k
-        inputs.extend(["-ss", f"{a:.3f}", "-t", f"{d:.3f}", "-i", file])
-        graph.append(f"[{k}:a:{track}]asetpts=PTS-STARTPTS,aresample=48000,"
-                     f"aformat=sample_fmts=fltp:channel_layouts=stereo,volume={gain:.2f}dB,"
-                     f"adelay={round(at * 1000)}:all=1,apad=whole_dur={total:.3f},asetpts=N/SR/TB,"
-                     f"atrim=duration={total:.3f}[a{k}]")
-        (music if duck else voices).append(f"[a{k}]")
+        play_d = max(min(d, total - at), 0.0)
+        if not loop and seg_d is not None:
+            play_d = min(play_d, seg_d)  # 'dur' is a maximum: never read past 'out'
+        if play_d <= 0:
+            return
+        if loop and seg_d and seg_d > 0:
+            inputs.extend(["-i", file])
+            chain = [
+                f"[{k}:a:{track}]aresample=48000",
+                "aformat=sample_fmts=fltp:channel_layouts=stereo",
+                f"atrim=start={a:.3f}:end={a + seg_d:.3f}",
+                "asetpts=PTS-STARTPTS",
+                f"aloop=loop=-1:size={max(round(seg_d * 48000), 1)}",
+                f"atrim=duration={play_d:.3f}",
+                "asetpts=PTS-STARTPTS",
+            ]
+        else:
+            inputs.extend(["-ss", f"{a:.3f}", "-t", f"{play_d:.3f}", "-i", file])
+            chain = [
+                f"[{k}:a:{track}]asetpts=PTS-STARTPTS",
+                "aresample=48000",
+                "aformat=sample_fmts=fltp:channel_layouts=stereo",
+            ]
+        if fade_in > 0:
+            chain.append(f"afade=t=in:st=0:d={min(fade_in, play_d):.3f}")
+        if fade_out > 0:
+            fd = min(fade_out, play_d)
+            chain.append(f"afade=t=out:st={max(play_d - fd, 0.0):.3f}:d={fd:.3f}")
+        chain.extend([
+            f"volume={gain:.2f}dB",
+            f"adelay={round(at * 1000)}:all=1",
+            f"apad=whole_dur={total:.3f}",
+            "asetpts=N/SR/TB",
+            f"atrim=duration={total:.3f}[a{k}]",
+        ])
+        graph.append(",".join(chain))
+        {"music": music, "sfx": sfx}.get(bus, voices).append(f"[a{k}]")
         k += 1
 
     for e in vids:
         if "audio_track" in e:
-            add(e["file"], e["a"], e["d"], e["start"], e["audio_track"], float(e.get("gain_db", 0)), False)
+            add(e["file"], e["a"], e["d"], e["start"], e["audio_track"], float(e.get("gain_db", 0)), "voice")
     for a in auds:
-        add(a["file"], a["a"], a["d"], a["at"], a["track"], a["gain"], a["duck"])
+        bus = a.get("bus") or ("music" if a.get("duck") else "voice")
+        add(a["file"], a["a"], a["d"], a["at"], a["track"], a["gain"], bus,
+            loop=bool(a.get("loop")), seg_d=a.get("seg_d"),
+            fade_in=float(a.get("fade_in") or 0.0), fade_out=float(a.get("fade_out") or 0.0))
     inputs.extend(["-f", "lavfi", "-t", f"{total:.3f}", "-i", "anullsrc=r=48000:cl=stereo"])
     sil = f"[{k}:a]"
 
@@ -277,11 +325,13 @@ def mix_audio(vids, auds, total, out, tmp):
         parts = ["[vb1]", "[md]"]
     elif voices or music:
         parts = [mixed(voices or music, "vb")]
+    if sfx:
+        parts.append(mixed(sfx, "sb"))
     graph.append(f"{''.join(parts)}{sil}amix=inputs={len(parts) + 1}:normalize=0:duration=longest,"
                  f"asetpts=N/SR/TB,atrim=duration={total:.3f}[mix]")
     run(["ffmpeg", "-nostdin", "-hide_banner", "-y", *inputs, "-filter_complex", ";".join(graph),
          "-map", "[mix]", "-c:a", "pcm_s24le", out], cwd=tmp)
-    return bool(voices or music)
+    return bool(voices or music or sfx)
 
 
 def loudnorm(src, dst):

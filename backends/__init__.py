@@ -11,6 +11,7 @@ KINDS (method every backend of that kind has)
     transcribe  words(media, lang=None, prompt=None, track=0) -> [{"w", "s", "e"}]
     tts         speak(text, out_base, lang, context=None, draft=False) -> {"audio", "words" | None}
     music       get(prompt, duration) -> path
+    sfx         get(prompt, max_dur=None) -> path
     render      render_scene(scene_dir, out, fps, w, h, draft=False) -> path; lint(scene_dir) -> [problems]
     judge       ask(inputs, questions) -> {name: {"answer", "score", "confidence"}}
     embed       embed(items, task="document") -> [[float]]  (items: {"text"} / {"image"} / {"video"})
@@ -26,7 +27,7 @@ CONFIG (~/.config/lowkeyoutuber/config)
     TTS="elevenlabs,chatterbox,none" a chain for one kind; the first backend
                                      that works is used, the next ones are
                                      fallbacks (missing key, quota, failure)
-    Keys per kind: LLM, TRANSCRIBE, TTS, MUSIC, RENDER, JUDGE, EMBED. API keys come from the
+    Keys per kind: LLM, TRANSCRIBE, TTS, MUSIC, SFX, RENDER, JUDGE, EMBED. API keys come from the
     environment only, never from the config file.
 
     `lky backends` lists every backend, whether it can be used here, and what it can do.
@@ -45,6 +46,7 @@ KINDS = {
     "transcribe": "words",
     "tts": "speak",
     "music": "get",
+    "sfx": "get",
     "render": "render_scene",
     "judge": "ask",
     "embed": "embed",
@@ -60,7 +62,8 @@ PROFILES = {
         "llm": "claude_cli,codex_cli,opencode_cli,ollama",
         "transcribe": "faster_whisper",
         "tts": "chatterbox,kokoro,none",
-        "music": "library",
+        "music": "library,composer",
+        "sfx": "library,freesound,cc0,synth",
         "render": "hyperframes",
         "judge": "ollama_vlm",
         "embed": "local",
@@ -69,7 +72,8 @@ PROFILES = {
         "llm": "claude_cli,codex_cli,opencode_cli,ollama",
         "transcribe": "faster_whisper",
         "tts": "elevenlabs,chatterbox,kokoro,none",
-        "music": "library",
+        "music": "library,composer",
+        "sfx": "library,freesound,cc0,synth",
         "render": "hyperframes",
         "judge": "gemini_decisions,ollama_vlm",
         "embed": "gemini_embedding,local",

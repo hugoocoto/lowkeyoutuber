@@ -45,6 +45,7 @@ is on PATH).
   | Local search | `open_clip_torch` (+ `ollama pull nomic-embed-text`) | Gemini Embedding (cloud, paid: ask first) |
   | Automatic checks (`judge.py`) | an Ollama vision model, or Gemini (cloud, paid: ask first) | look at the frames yourself |
   | Upload | `google-api-python-client google-auth-oauthlib` | the person uploads in YouTube Studio |
+  | Composed music (`sound.py`) | system `fluidsynth` and a `.sf2` soundfont | tracks in `MUSIC_DIR`; no music |
 - **When something is missing, you decide what to do:** install the package (`lky pip install ...`), or
   use one of the alternatives, whichever gives the better result for the request at a sensible cost
   (some installs download GBs: torch-based voices, OpenCLIP). Say what you chose and why. **If the person
@@ -61,6 +62,7 @@ is on PATH).
   | Node.js + npm (scenes) | `sudo pacman -S nodejs npm` | `sudo apt install nodejs npm` (needs 22+) | `brew install node` |
   | espeak-ng (Kokoro) | `sudo pacman -S espeak-ng` | `sudo apt install espeak-ng` | `brew install espeak-ng` |
   | Xvfb, xdotool, xterm (capture) | `sudo pacman -S xorg-server-xvfb xdotool xterm` | `sudo apt install xvfb xdotool xterm` | not available: record the screen |
+  | FluidSynth + soundfont (music) | `sudo pacman -S fluidsynth soundfont-fluid` | `sudo apt install fluidsynth fluid-soundfont-gm` | `brew install fluid-synth` (soundfont: set `SOUNDFONT`) |
   | Ollama (local LLM/judge/search) | `sudo pacman -S ollama` (`ollama-cuda` for NVIDIA) | ollama.com install script | `brew install ollama` |
 
 ## How much to ask
@@ -75,8 +77,8 @@ It depends on what the person asked for.
 - **Uploads are private.** Never upload unless asked; the person publishes in YouTube Studio. There is
   no upload tool for other platforms (X, LinkedIn...): leave the files in `out/` for the person to post.
 - **No secrets on screen:** API keys, tokens, real emails, customer data. Use demo data.
-- **API keys** come from the environment (`ELEVENLABS_API_KEY`, `GEMINI_API_KEY`, `OBS_WEBSOCKET_PASSWORD`),
-  never the config file or the project folder. Never print them.
+- **API keys** come from the environment (`ELEVENLABS_API_KEY`, `GEMINI_API_KEY`, `FREESOUND_API_KEY`,
+  `OBS_WEBSOCKET_PASSWORD`), never the config file or the project folder. Never print them.
 - **GPU when there is one.** With an NVIDIA GPU, every encode, transcription or model run uses it: NVENC
   (`yt_common.video_encoder("auto", q)` from Python; `-c:v h264_nvenc -preset p5 -tune hq -rc vbr -cq 18
   -b:v 0` in shell), CUDA for Whisper/TTS/Ollama; on a hybrid laptop, through `prime-run` when it exists
@@ -118,6 +120,7 @@ progress on stderr), and skip work that's already done (`-f` to redo).
 | `lky` | new, add-media, status, check, backends, flows, skills; `run <tool>`, `pip`, `venv` |
 | `render.py` | timeline → `out/video*.mp4` + `out/video.srt` (zooms, captions, ducking, -14 LUFS) |
 | `tts.py` | narrates `script.json` with the configured TTS backend; `--place` builds the timeline from it |
+| `sound.py` | video-adaptive FluidSynth music (`--propose`/`--place`, `generate`) and CC0 SFX (`fetch`, `import-pack`) |
 | `align.py` | matches a recording (or teleprompter takes) to `script.json`, keeps the last good take of each line |
 | `scenes.py` | animated scenes per script line (title, text, code, terminal, diagram, image, custom), rendered with HyperFrames |
 | `capture.py` | drives and records an app (web with Playwright, terminal, desktop on a virtual screen), logs every action, proposes zooms |
