@@ -17,7 +17,7 @@ inputs: the long video (required); how many Shorts and how long (default 5 of 30
    earlier context, that cross a hard cut, or that end mid-action. With a judge backend,
    `./judge.py --clips <out>/shorts/clips.json --video video.mp4` adds a `judge` score to each clip
    (hook, works without context, ends cleanly) and lists the ones that fail.
-   - **APPROVAL:** show the person the remaining proposals (times, title, one-line summary); they pick.
+   - **Check-in:** show the person the remaining proposals (times, title, one-line summary); they pick.
      Times can be edited in `clips.json` before rendering.
 4. **Render the approved ones:** `python clips.py video.mp4 -o <out>/shorts --pick 1,3`.
 5. **Look at them:** extract 3 frames of each Short (start, middle, end) and check captions don't cover

@@ -9,7 +9,7 @@ inputs: the topic and notes (required); length; which parts are recorded (screen
 # Script, then record
 
 ## Steps
-1. **Project:** `./lky new script-then-record work/<name>`.
+1. **Project:** `./lky new work/<name> --flow script-then-record`.
 2. **Script:** write `script.json`: short lines (one breath each), in the order they'll be recorded.
    Lines the person won't record can have a `scene` (see flows/generated-short.md) and TTS. Note:
    `align.py --apply` (both modes) refuses to write the timeline unless every script line has a
@@ -18,7 +18,7 @@ inputs: the topic and notes (required); length; which parts are recorded (screen
    build `timeline.video` by hand, one item per line (`scene:<id>` media for the generated ones,
    padding as in step 4). In step 4, only recorded lines need a take ("not found" for a generated line
    is expected), and skip step 5 (`--apply`) once the timeline is built by hand.
-   - **APPROVAL:** the person reads it and changes anything that doesn't sound like them.
+   - **Check-in:** the person reads it and changes anything that doesn't sound like them.
 3. **Teleprompter:** ask whether OBS's WebSocket server is on (OBS: Tools > WebSocket Server Settings)
    and the password is in `OBS_WEBSOCKET_PASSWORD`. Then tell the person to run (it opens a page):
    `./teleprompter.py -P work/<name> --obs`. In the page: Space starts/stops a take, → next line,
@@ -40,13 +40,13 @@ inputs: the topic and notes (required); length; which parts are recorded (screen
      3. build `timeline.video` by hand from both reports: one item per line, `src` the recording it
         came from, `in` = `start` - 0.15 (not below 0) and `out` = `end` + 0.25 (not past the end of
         the file), the same padding `align.py --apply` uses. Listen to every join, then skip step 5.
-   - **APPROVAL:** show the report; the person accepts lines said differently, or re-records them.
+   - **Check-in:** show the report; the person accepts lines said differently, or re-records them.
 5. **Timeline:** the same command with `--apply` puts the chosen takes one after another (takes are kept
    whole: no pause inside a take is trimmed). Add zooms where the screen matters (flows/edit-recording.md
    step 5).
 6. **Render:** `./render.py -P work/<name> --preview --frames auto`, then `./render.py -P work/<name>`.
-7. **Publish:** `./publish.sh -L work/<name>/out/video.mp4` for subtitles, chapters, metadata,
-   thumbnails; upload as in flows/edit-recording.md.
+7. **Upload folder (optional):** metadata, thumbnails and upload as in flows/edit-recording.md
+   steps 6-10 (`render.py` already wrote the audio at -14 LUFS and `out/video.srt`).
 
 ## Checks
 `./lky check -P work/<name>`; listen to every join between takes.

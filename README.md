@@ -1,46 +1,51 @@
 # lowkeyoutuber
 
-Turn a screen recording into a video that's ready for YouTube: clean audio, subtitles,
-chapters, titles, description, tags, thumbnails and Shorts. One command, runs on your own machine.
-
-```
-./publish.sh my-video.mp4
-```
+A box of small tools for making YouTube videos on your own machine: clean up a recording's voice,
+cut it, subtitle it, write titles and chapters, make thumbnails and Shorts, narrate a script, animate
+scenes, record an app demo, and upload. Each tool does one thing and works on files, so you (or an AI
+agent) can use any of them on their own or chain them however the video needs.
 
 ## Ask an AI to do it
 
 Open this folder in Claude Code (or Codex, OpenCode...) and say what you want: "edit this
 recording", "make a Short about the comma operator", "add a voice to this demo", "write me a
-script and I'll record it". The agent reads `AGENTS.md`, picks a **flow** from `flows/`, asks
-only for what's missing, and stops for your OK before cutting, generating or uploading anything.
+script and I'll record it". The agent reads `AGENTS.md`, picks the tools, and asks as much as you
+want it to: say "just do it" and it won't stop to ask; edit with it and it shows you each step.
 
 ```
-./lky flows       # what it can do, and what each flow needs
 ./lky backends    # which models it can use on this machine
+./lky flows       # worked examples of common videos (flows/)
 ```
 
-## Quick start
+## Use the tools yourself
+
+From a recording to an upload, using only what you need (outputs go wherever `-o` says):
 
 ```
-source ~/.venvs/subs/bin/activate    # see Install
-./publish.sh my-video.mp4            # everything, into my-video_publish/
-./publish.sh -s my-video.mp4         # the same, plus vertical Shorts
-python upload.py my-video_publish/   # upload to YouTube as private
+source ~/.venvs/subs/bin/activate                     # see Install
+mkdir -p out
+./process-voice.sh -t 1 -o out/video.mp4 rec.mkv      # clean voice on track 1, -14 LUFS
+python subtitles.py --audio-from rec.mkv -t 1 out/video.mp4 > out/video.srt
+python meta.py -o out out/video.mp4                   # chapters, titles, description, tags (overwrites them)
+python thumbnail.py -o out out/video.mp4              # thumbnail designs
+python clips.py -o out/shorts out/video.mp4           # vertical Shorts
+python upload.py out/                                  # upload to YouTube as private
 ```
 
-Before uploading, open `my-video_publish/` and check:
+`upload.py` takes any folder with these files (`--dry-run` checks them first):
 
 | File | What it is |
 |---|---|
-| `video.mp4` | your video, with a clean voice at the loudness YouTube expects |
-| `titles.txt` | 5 title ideas; the first line is the one that gets uploaded |
+| `video.mp4` | the video |
+| `titles.txt` | title ideas; the first line is the one that gets uploaded |
 | `description.txt` | description with chapters |
-| `video.srt` | subtitles; check names and technical words |
-| `thumbnail.jpg` | a thumbnail; other designs are in `thumbs/` |
-| `shorts/` | vertical clips with captions (with `-s`) |
+| `tags.txt` | comma-separated tags |
+| `video.srt` | subtitles (optional); check names and technical words |
+| `thumbnail.jpg` | the thumbnail (optional); other designs are in `thumbs/` |
+| `shorts/` | vertical clips, uploaded with `--shorts` |
 
-Edit any of them by hand. Running `publish.sh` again skips what's already done; delete a file
-to make it again.
+Edit any of them by hand. Rerunning `meta.py` or `thumbnail.py` overwrites these files, so once you have
+edited them, resume from the next step instead. Tools that cache (transcripts, TTS) skip work already done.
 
 ## Install (Arch Linux)
 
@@ -83,40 +88,42 @@ and `cam_check.jpg` showing where it points.
 
 ## Good to know
 
-- **Cut first.** Edit your recording in Kdenlive or Shotcut, or write the parts to remove in a
+- **Cutting.** Edit your recording in Kdenlive or Shotcut, or write the parts to remove in a
   text file (`17:14 - 17:22`, one per line) and run `./cut.py rec.mkv cuts.txt`. Add `--check`
-  to read the words around each cut before rendering.
+  to read the words around each cut before rendering. `autocut.py` removes every pause and
+  repeated sentence by itself; in screencasts, pauses often have something happening on screen.
 - **Music or desktop audio on its own track?** Clean the voice before editing, because editors
   mix all tracks together: `./process-voice.sh -t 1 -m 0 -c rec.mkv` (voice on track 1, music
-  on 0), edit `rec_clean.mkv`, then `./publish.sh -L export.mp4`.
-- **Different Shorts.** `python clips.py my-video_publish/video.mp4 -o my-video_publish/shorts
-  --pick 2,4` makes clips 2 and 4 of the ones listed in `shorts/clips.json`.
+  on 0), edit `rec_clean.mkv`, then `./process-voice.sh -L export.mp4` for the loudness only.
+- **Different Shorts.** `python clips.py out/video.mp4 -o out/shorts --pick 2,4` makes clips 2
+  and 4 of the ones listed in `out/shorts/clips.json`.
 - **Uploading** needs a one-time Google setup, explained in `python upload.py -h`. Videos
   arrive private (YouTube's rule for personal projects): publish them in YouTube Studio.
-  Upload the video first, then `python upload.py --shorts my-video_publish/`, so the Shorts
-  link to it.
-- **Always review.** Subtitles and AI-written text make mistakes.
+  Upload the video first, then `python upload.py --shorts out/`, so the Shorts link to it.
+- **Review what AI wrote.** Subtitles, titles and descriptions make mistakes.
 
-## The scripts
+## The tools
 
-`publish.sh` runs the first five. Every script explains its options with `-h`.
+Every tool explains its options with `-h`.
 
-| Script | What it does |
+On files:
+
+| Tool | What it does |
 |---|---|
 | `process-voice.sh` | Removes background noise and sets the volume YouTube expects. |
 | `subtitles.py` | Writes subtitles from what you say. |
 | `meta.py` | Writes chapters, titles, description, tags and thumbnail texts. |
-| `thumbnail.py` | Makes thumbnails: a frame of the video, your face, a few big words. |
+| `thumbnail.py` | Makes thumbnails: a frame of the video, your face (if there's a facecam), a few big words. |
 | `clips.py` | Finds the best moments and turns them into vertical Shorts with captions. |
-| `upload.py` | Uploads the result to YouTube. |
+| `upload.py` | Uploads a folder to YouTube, private. |
 | `cut.py` | Removes the parts of a recording you list in a text file. |
 | `autocut.py` | Removes every pause and repeated sentence automatically. |
 
-For flows (see `AGENTS.md`), working in a project folder (`docs/project.md`):
+On a project folder (`./lky new work/<name>`, format in `docs/project.md`):
 
-| Script | What it does |
+| Tool | What it does |
 |---|---|
-| `lky` | Lists flows, creates projects, shows their state, runs the final checks, lists backends. |
+| `lky` | Creates projects, shows their state, runs the final checks, lists backends and examples. |
 | `tts.py` | Narrates a script with the configured voice (yours, cloned, or a preset), with word timings. |
 | `align.py` | Matches a recording to the script and keeps the last good take of each line. |
 | `render.py` | Renders the project's timeline: clips, images, zooms, captions, music under the voice, -14 LUFS. |

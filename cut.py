@@ -19,7 +19,7 @@ HOW IT WORKS
        GPU), all audio tracks kept and in sync, audio as FLAC.
     3. Writes <output>.words.json: the transcript moved to the new timeline.
        Whisper did better on the raw audio than it does after
-       process-voice.sh, and this way publish.sh reuses it instead of
+       process-voice.sh, and this way later tools (subtitles.py, meta.py) reuse it instead of
        transcribing again.
 
     Always listen to every cut: Whisper's word times are loose on fast speech,

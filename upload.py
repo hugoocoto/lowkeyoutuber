@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-upload.py - Upload a folder made by publish.sh to YouTube: the video, title,
-description (with chapters), tags, subtitles and thumbnail.
+upload.py - Upload a folder to YouTube: the video, title, description (with
+chapters), tags, subtitles and thumbnail. Any folder with these names works,
+e.g. a project's out/ after `render.py`, `meta.py -o out/` and
+`thumbnail.py -o out/`.
 
 Reads from the folder:
     video.mp4        the video
@@ -41,11 +43,11 @@ LIMITS
     - Custom thumbnails need a verified channel (phone verification).
 
 USAGE
-    upload.py video_publish/
-    upload.py video_publish/ --category 28                 # Science & Technology
-    upload.py video_publish/ --publish-at 2026-11-02T17:00:00Z
-    upload.py video_publish/ --dry-run                     # check, don't upload
-    upload.py video_publish/ --shorts                      # the Shorts in video_publish/shorts/
+    upload.py work/demo/out/
+    upload.py work/demo/out/ --category 28                 # Science & Technology
+    upload.py work/demo/out/ --publish-at 2026-11-02T17:00:00Z
+    upload.py work/demo/out/ --dry-run                     # check, don't upload
+    upload.py work/demo/out/ --shorts                      # the Shorts in work/demo/out/shorts/
 """
 
 import argparse
@@ -209,7 +211,7 @@ def shorts(args):
     sdir = os.path.join(folder, "shorts")
     cj = os.path.join(sdir, "clips.json")
     if not os.path.isfile(cj):
-        die(f"no {cj}: make the Shorts with clips.py (or publish.sh -s) first")
+        die(f"no {cj}: make the Shorts with clips.py -o <folder>/shorts first")
     with open(cj, encoding="utf-8") as f:
         clips = json.load(f)
     by_file = {c["file"]: c for c in clips if c.get("file")}
@@ -270,7 +272,7 @@ def shorts(args):
 
 
 def main():
-    p = argparse.ArgumentParser(description="Upload a publish.sh folder to YouTube (as private by default).")
+    p = argparse.ArgumentParser(description="Upload a folder (video.mp4, titles.txt, description.txt...) to YouTube, private by default.")
     p.add_argument("folder")
     p.add_argument("--video", help="video file (default: <folder>/video.mp4)")
     p.add_argument("--shorts", action="store_true", help="upload the Shorts in <folder>/shorts/ (see SHORTS)")

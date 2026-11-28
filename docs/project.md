@@ -1,12 +1,16 @@
 # Project format (version 1)
 
-Every flow works in a project folder made by `./lky new <flow> <dir>`. Agents edit `project.json`
-and `script.json`; `render.py` is the only thing that turns them into video.
+The tools that work on a timeline share a project folder made by `./lky new <dir>`. Agents edit
+`project.json` and `script.json`, and `render.py` turns them into video. Tools that work on plain
+files (`cut.py`, `subtitles.py`, `meta.py`, `thumbnail.py`, `clips.py`, `upload.py`) don't need one;
+keep their results in the project's `out/`, each in its own way: `meta.py -o out`, `thumbnail.py -o out`
+and `clips.py -o out/shorts` take a folder; `cut.py -o out/cut.mkv` takes a file; `subtitles.py` prints
+to stdout (`> out/video.srt`); `upload.py out/` takes the folder as an argument.
 
 ```
 myproject/
-  project.json   flow, formats, media, timeline, state
-  script.json    the lines (flows with a script)
+  project.json   formats, media, timeline, state (+ optional flow, inputs)
+  script.json    the lines (videos with a script)
   media/         inputs (or referenced by absolute path: big recordings aren't copied)
   narration/     tts.py output: <id>.wav, <id>.words.json, <id>.json
   proposals/     waiting for a person's OK: cuts.txt, takes.json, ...
@@ -45,6 +49,8 @@ myproject/
 }
 ```
 
+- **flow**, **inputs**: optional notes: the example in `flows/` the project started from, and what
+  the person asked for. No tool requires them.
 - **formats**: name → `[width, height]` (even numbers). The first one renders to `out/video.mp4`,
   the others to `out/video_<name>.mp4` (`9:16` → `video_9x16.mp4`).
 - **media**: id → file. Paths are relative to the project, or absolute. `words` is a transcript in the
@@ -108,4 +114,4 @@ play. `out/video.srt` is always written from them. `burn: true` draws them on th
 | `pad_before`, `pad_after` | first/last line: seconds of picture before the voice starts / after it ends (0.3 / 0.8) |
 | `scene` | `scenes.py`: the line's animated scene (`{"type": "code", ...}`, see `scenes.py -h`); becomes media `scene:<id>` and the line's picture |
 | `actions` | `capture.py`: what to do in the app during the line (see `capture.py -h`) |
-| anything else | free for the flow (`action`, `notes`, ...) |
+| anything else | free for your own notes (`action`, `notes`, ...) |

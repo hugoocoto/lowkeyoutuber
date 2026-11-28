@@ -139,7 +139,7 @@ def main():
     p.add_argument("--text", action="append", help="thumbnail text, 2-4 words (repeatable)")
     p.add_argument("--at", type=float, action="append", help="frame time in seconds (repeatable, one per text)")
     p.add_argument("--cam", default=CONFIG.get("CAM") or None,
-                   help="facecam box in source pixels, x:y:w:h (default: config CAM; none = text only)")
+                   help='facecam box in source pixels, x:y:w:h (default: config CAM; "" = no facecam, text only)')
     p.add_argument("--face-crop", type=float, default=0.8,
                    help="top fraction of the facecam box to use, to leave out the desk (default 0.8)")
     p.add_argument("--face-x", type=float, default=float(CONFIG.get("FACE_X") or 0.5),

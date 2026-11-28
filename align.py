@@ -12,7 +12,7 @@ TWO USES
        the LAST complete take of each line is kept, and the result is written
        as a proposal; --apply turns it into timeline items.
 
-    Takes are kept whole: pauses inside a take are never trimmed (NOTES.md).
+    Takes are kept whole: pauses inside a take are never trimmed (they may have something on screen).
 
 USAGE
     align.py -P project/ --media rec1                 # proposals/takes.json + report
