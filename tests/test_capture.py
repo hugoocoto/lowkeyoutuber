@@ -99,3 +99,41 @@ def test_terminal_capture_runs_commands_for_real(tmp_path):
     run("-P", d, "--kind", "terminal", "--cwd", str(work), "--size", "1280x720")
     assert (work / "f.txt").read_text().strip() == "hola"
     assert float(probe(os.path.join(d, "media", "capture.mp4"))["format"]["duration"]) > 1
+
+
+def test_fake_camera_converts_an_image_to_y4m(tmp_path):
+    png = str(tmp_path / "qr.png")
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=white:s=320x240", "-frames:v", "1", png], check=True)
+    flags = capture.fake_camera_args(png, str(tmp_path))
+    y4m = flags[-1].split("=", 1)[1]
+    assert y4m.endswith(".y4m") and os.path.getsize(y4m) > 0
+    assert "--use-fake-device-for-media-stream" in flags
+    with pytest.raises(capture.CaptureError):
+        capture.fake_camera_args(str(tmp_path / "missing.png"), str(tmp_path))
+
+
+@pytest.mark.skipif(not have_playwright(), reason="needs Playwright and Chrome/Chromium")
+def test_fake_camera_plays_and_spellcheck_is_off(tmp_path, app_server):
+    from playwright.sync_api import sync_playwright
+    png = str(tmp_path / "red.png")
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=red:s=640x480", "-frames:v", "1", png], check=True)
+    with sync_playwright() as p:
+        b = p.chromium.launch(executable_path=capture.chrome_path(), args=capture.fake_camera_args(png, str(tmp_path)))
+        ctx = b.new_context()
+        ctx.add_init_script(capture.NO_SPELLCHECK_JS)
+        page = ctx.new_page()
+        page.goto(app_server)
+        # a field created after load, like an app's form, gets focus: spell-check must be off
+        page.evaluate("() => { const t = document.createElement('textarea'); t.id = 't'; document.body.append(t); }")
+        page.focus("#t")
+        assert page.evaluate("() => document.querySelector('#t').spellcheck") is False
+        red = page.evaluate("""async () => {
+            const s = await navigator.mediaDevices.getUserMedia({video: true});
+            const v = document.createElement('video'); v.srcObject = s; v.muted = true; await v.play();
+            await new Promise(r => setTimeout(r, 500));
+            const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
+            c.getContext('2d').drawImage(v, 0, 0);
+            const [r, g, b] = c.getContext('2d').getImageData(c.width / 2, c.height / 2, 1, 1).data;
+            return r > 180 && g < 80 && b < 80; }""")
+        b.close()
+    assert red

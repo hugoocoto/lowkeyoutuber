@@ -6,7 +6,9 @@ every click and keystroke with its time and place. The log gives each line its s
 
 KINDS
     web       a page in Chrome (Playwright). A visible cursor glides to each element and
-              shows each click. Needs: pip install playwright (uses the installed Chrome/Chromium).
+              shows each click. Spell-check is off (no red squiggles under typed text).
+              --fake-camera FILE: the page's camera plays FILE (an image or a video, looped), for
+              QR scanners, video calls... Needs: pip install playwright (uses the installed Chrome/Chromium).
     desktop   any X11 program on a virtual screen (Xvfb + xdotool + ffmpeg), so your own desktop
               isn't touched: a terminal app, an editor, a GUI. Needs: Xvfb, xdotool.
     terminal  desktop with a big-font xterm; "run" actions type a command and press Enter.
@@ -22,6 +24,7 @@ ACTIONS (script.json, per line: "actions": [...], done in order)
 
 USAGE
     capture.py -P project/ --kind web --url http://localhost:3000
+    capture.py -P project/ --kind web --url http://localhost:8080 --fake-camera qr.png
     capture.py -P project/ --kind terminal --cwd ~/code/demo
     capture.py -P project/ --kind desktop --app "gedit notes.txt" --size 1920x1080
     capture.py -P project/ --apply          # after approval: proposals/zooms.json -> timeline
@@ -115,6 +118,33 @@ def web_base(url):
     return url.rstrip("/")
 
 
+# Red squiggles under typed text end up in the video: turn spell-check off on every field as it gets focus
+# (also fields the app creates later, like a form in a sheet).
+NO_SPELLCHECK_JS = r"""
+document.addEventListener('focusin', e => { if (e.target && 'spellcheck' in e.target) e.target.spellcheck = false; }, true);
+"""
+
+
+def fake_camera_args(path, tmp):
+    """Chromium flags for a fake camera that plays path. Chromium reads only .y4m (or .mjpeg), so any other
+    image or video is converted to a 30 fps .y4m in tmp first."""
+    path = os.path.expanduser(path)
+    if not os.path.isfile(path):
+        raise CaptureError(f"--fake-camera: no such file: {path}")
+    if not path.lower().endswith((".y4m", ".mjpeg")):
+        out = os.path.join(tmp, "camera.y4m")
+        image = path.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp"))
+        cmd = ["ffmpeg", "-v", "error", "-y"] + (["-loop", "1", "-t", "5"] if image else []) + \
+              ["-i", path, "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:-1:-1,fps=30",
+               "-pix_fmt", "yuv420p", "-t", "30", out]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode:
+            raise CaptureError(f"--fake-camera: could not convert {path}: {r.stderr.strip()[-300:]}")
+        path = out
+    return ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream",
+            f"--use-file-for-fake-video-capture={path}"]
+
+
 def chrome_path():
     from yt_common import CONFIG
     for c in (CONFIG.get("CHROME"), "google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
@@ -126,7 +156,7 @@ def chrome_path():
 # ---------------------------------------------------------------------------
 # Web (Playwright)
 # ---------------------------------------------------------------------------
-def capture_web(lines, root, url, W, H, tmp, headed):
+def capture_web(lines, root, url, W, H, tmp, headed, camera=None):
     try:
         from playwright.sync_api import Error as PWError, sync_playwright
     except ImportError:
@@ -135,11 +165,13 @@ def capture_web(lines, root, url, W, H, tmp, headed):
     base = web_base(url)
     with sync_playwright() as p:
         exe = chrome_path()
-        browser = p.chromium.launch(headless=not headed, executable_path=exe) if exe else \
-            p.chromium.launch(headless=not headed)
+        flags = fake_camera_args(camera, tmp) if camera else []
+        browser = p.chromium.launch(headless=not headed, executable_path=exe, args=flags) if exe else \
+            p.chromium.launch(headless=not headed, args=flags)
         ctx = browser.new_context(viewport={"width": W, "height": H}, device_scale_factor=1,
                                   record_video_dir=tmp, record_video_size={"width": W, "height": H})
         ctx.add_init_script(CURSOR_JS)
+        ctx.add_init_script(NO_SPELLCHECK_JS)
         page = ctx.new_page()
         clock = Clock()   # the video starts when the page is created
         mouse = [W / 2, H / 2]
@@ -390,6 +422,7 @@ def main():
     p.add_argument("--cwd", help="desktop/terminal: folder to start in")
     p.add_argument("--size", default="1920x1080", help="screen size (default 1920x1080)")
     p.add_argument("--headed", action="store_true", help="web: show the browser (for debugging)")
+    p.add_argument("--fake-camera", metavar="FILE", help="web: an image or video the page's camera shows (looped)")
     p.add_argument("--apply", action="store_true", help="put the approved proposals/zooms.json on the timeline")
     p.add_argument("--json", action="store_true")
     args = p.parse_args()
@@ -436,7 +469,7 @@ def main():
             if args.kind == "web":
                 if not args.url:
                     die("--url is required for web captures")
-                src, events, spans = capture_web(lines, root, args.url, W, H, tmp, args.headed)
+                src, events, spans = capture_web(lines, root, args.url, W, H, tmp, args.headed, args.fake_camera)
             else:
                 if args.kind == "desktop" and not args.app:
                     die("--app is required for desktop captures")

@@ -160,6 +160,7 @@ On a project folder (`./lky new work/<name>`, format in `docs/project.md`):
 | `render.py` | Renders the project's timeline: clips, images, zooms, captions, music under the voice, -14 LUFS. |
 | `scenes.py` | Animated scenes written as code (code typing, diagrams, terminal, titles), rendered with HyperFrames. |
 | `capture.py` | Records an app by driving it: a web page, a terminal or a desktop program, with zooms on each action. |
+| `frame.py` | Puts phone captures in a phone frame on a background, one or two side by side, for each video shape. |
 | `teleprompter.py` | Shows the script while you record; with OBS, one recording per take. |
 | `judge.py` | Checks scenes, narration and Shorts with a multimodal model before you look. |
 | `search.py` | Finds moments in your old recordings by describing them. |

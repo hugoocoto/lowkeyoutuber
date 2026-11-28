@@ -47,8 +47,8 @@ def new(path, flow=None, lang=None, formats=("16:9",), inputs=None, fps=30):
 
 
 def root(path):
-    """Accept the project folder or its project.json."""
-    return os.path.dirname(path) if path.endswith(".json") else path
+    """Accept the project folder or its project.json. Absolute: tools run ffmpeg in temp folders."""
+    return os.path.abspath(os.path.dirname(path) if path.endswith(".json") else path)
 
 
 def load(path):

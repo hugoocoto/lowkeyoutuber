@@ -95,6 +95,9 @@ def load_config():
 CONFIG = load_config()
 
 
+WHISPER_MODEL = "large-v3-turbo"   # default model; also the key of transcript caches render.py writes
+
+
 def default_language():
     """The user's language when nothing explicit was given: config LANGUAGE, else env LKY_LANG,
     else None (unknown: Whisper detects it, TTS backends ask the person to set it)."""
@@ -154,7 +157,7 @@ def add_transcript_args(p):
     g = p.add_argument_group("transcription")
     g.add_argument("-l", "--language", default=default_language(),
                    help="language code, e.g. en, es, fr (default: config LANGUAGE, else env LKY_LANG, else auto-detect)")
-    g.add_argument("-m", "--model", default="large-v3-turbo",
+    g.add_argument("-m", "--model", default=WHISPER_MODEL,
                    help="Whisper model: small, medium, large-v3, large-v3-turbo (default large-v3-turbo)")
     g.add_argument("-t", "--track", "--audio-track", dest="track", type=int, default=0,
                    help="audio track with the voice, 0-based (default 0)")

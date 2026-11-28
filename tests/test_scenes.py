@@ -155,3 +155,12 @@ def test_real_hyperframes_render(tmp_path):
     assert b.lint(str(d)) == []
     out = b.render_scene(str(d), str(tmp_path / "s.mp4"), 30, 640, 360, draft=True)
     assert abs(float(probe(out)["format"]["duration"]) - 1.0) < 0.1
+
+
+def test_highlights_java_and_json():
+    java = [t for t in scenes.tokens('@Async // hola\npublic void f(String s) { return "@x"; }', "java") if t[0]]
+    assert ("p", "@Async") in java and ("c", "// hola") in java and ("k", "public") in java
+    assert ("f", "f") in java and ("s", '"@x"') in java        # an @ inside a string stays a string
+    assert [t for t in scenes.tokens('{"ok": true, "n": 2}', "json") if t[0]] == \
+        [("s", '"ok"'), ("k", "true"), ("s", '"n"'), ("n", "2")]
+    assert ("c", "# comment") in scenes.tokens("x = 1  # comment", "python")   # other languages unchanged

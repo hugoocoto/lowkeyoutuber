@@ -97,7 +97,9 @@ Audio past the end of the video is cut. The mix is normalized to -14 LUFS / -1 d
 ### timeline.captions
 Word timings come from the media's `words` (TTS lines, transcribed recordings), moved to where they
 play. `out/video.srt` is always written from them. `burn: true` draws them on the picture;
-`style`: `word-highlight` (current word highlighted, like clips.py) or `plain`.
+`style`: `word-highlight` (current word highlighted, like clips.py) or `plain`. Colours (RRGGBB): `color` (text, default
+`FFFFFF`), `highlight` (current word, `FFD700`), `outline` (text border, `000000`), or `box` (an opaque box
+behind each line instead of the border). Captions hang from a fixed line: one that needs two lines grows downwards.
 
 ## script.json
 
